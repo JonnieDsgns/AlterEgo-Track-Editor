@@ -2,7 +2,7 @@
 bl_info = {
     "name": "AlterEgo Track Editor",
     "author": "Yannick",
-    "version": (0, 1, 0),
+    "version": (0, 1, 1),
     "blender": (4, 5, 0),
     "location": "View3D > Sidebar > Track Workshop",
     "description": "Import AC tracks and prepare surfaces, timing, lines, rules and material sources",
@@ -30,10 +30,10 @@ def layout_changed(self, context):
         self.model_summary = str(error)
 
 
-class TW_OT_choose_layout(jobs.CooperativeJob, bpy.types.Operator):
+class TW_OT_choose_layout(bpy.types.Operator):
     bl_idname = "track_workshop.choose_layout"
     bl_label = "Import Track Layout"
-    bl_options = {"REGISTER", "UNDO"}
+    # The dialog hands off to a distinct undoable worker operator.
 
     directory: StringProperty(subtype="DIR_PATH", options={"HIDDEN"})
     selected_layout: EnumProperty(name="Layout", items=layout_items, update=layout_changed)
@@ -53,13 +53,33 @@ class TW_OT_choose_layout(jobs.CooperativeJob, bpy.types.Operator):
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=460)
 
-    def build(self, context):
-        from .importer import load_steps
-        return load_steps(context, self.directory, self.selected_layout)
-
     def draw(self, context):
         self.layout.prop(self, "selected_layout")
         self.layout.label(text=self.model_summary, icon="MESH_DATA")
+
+    def execute(self, context):
+        result = bpy.ops.track_workshop.import_layout(
+            'INVOKE_DEFAULT', directory=self.directory, selected_layout=self.selected_layout)
+        return {'CANCELLED'} if result == {'CANCELLED'} else {'FINISHED'}
+
+
+class TW_OT_import_layout(jobs.CooperativeJob, bpy.types.Operator):
+    bl_idname = 'track_workshop.import_layout'
+    bl_label = 'Import Track Layout'
+    bl_options = {'REGISTER', 'UNDO'}
+    directory: StringProperty(subtype='DIR_PATH', options={'HIDDEN'})
+    selected_layout: StringProperty(options={'HIDDEN'})
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'OBJECT' and not jobs.busy(context)
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def build(self, context):
+        from .importer import load_steps
+        return load_steps(context, self.directory, self.selected_layout)
 
     def execute(self, context):
         try:
@@ -129,7 +149,7 @@ def import_menu(self, context):
     self.layout.operator("track_workshop.track_folder", text="Assetto Corsa Track Folder", icon="FILE_FOLDER")
 
 
-CLASSES = (TW_OT_choose_layout, TW_OT_track_folder, TW_PT_import)
+CLASSES = (TW_OT_import_layout, TW_OT_choose_layout, TW_OT_track_folder, TW_PT_import)
 
 
 def register():

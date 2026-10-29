@@ -16,6 +16,8 @@ from alterego_track_editor.tests.kn5_fixture import fixture
 
 
 TrackWorkshop.register()
+assert not issubclass(TrackWorkshop.TW_OT_choose_layout, TrackWorkshop.jobs.CooperativeJob)
+assert issubclass(TrackWorkshop.TW_OT_import_layout, TrackWorkshop.jobs.CooperativeJob)
 try:
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
@@ -27,6 +29,7 @@ try:
         TrackWorkshop._items[folder] = [(row["id"], row["name"], row["id"]) for row in choices]
         result = bpy.ops.track_workshop.choose_layout(directory=folder, selected_layout="models_short.ini")
         assert result == {"FINISHED"}
+        assert len([c for c in bpy.context.scene.collection.children if c.get("tw_project_id")]) == 1
         imported = next(c for c in bpy.data.collections if c.get("tw_layout_manifest"))
         assert imported["ate_schema"] == "AlterEgo.TrackProject.v1"
         assert len(json.loads(imported["ate_sources"])) >= 2
@@ -52,6 +55,13 @@ try:
         except ValueError:
             pass
         assert before == {kind: len(getattr(bpy.data, kind)) for kind in before}
+        # Cancellation after the first yielded chunk must remove the partial root.
+        (root / 'b.kn5').write_bytes((root / 'a.kn5').read_bytes())
+        iterator = importer.load_steps(bpy.context, folder, 'models.ini')
+        next(iterator)
+        assert len([c for c in bpy.context.scene.collection.children if c.get('tw_project_id')]) == 2
+        iterator.close()
+        assert len([c for c in bpy.context.scene.collection.children if c.get('tw_project_id')]) == 1
         print("TRACK_WORKSHOP_SMOKE_PASS: registration, selected layout, geometry, transforms, UV, material, rollback")
 finally:
     TrackWorkshop.unregister()

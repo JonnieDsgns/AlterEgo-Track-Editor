@@ -23,3 +23,7 @@ Not game-tested; no native-format track exporter, new variant registry, Pack Pro
 ## Reproduce
 
 Run `python -B -m unittest discover -s addon/alterego_track_editor/tests -v` and `python -B -m unittest discover -s tests -v` from repository root. Run `tests/blender_foundation.py` through Blender background/factory startup with `--python-exit-code 1`, passing repository root and a new ignored build folder after `--`. Run `tests/blender_ac_import.py` in the same background configuration. Build the internal ZIP with `python tools/build_foundation.py`.
+
+## 0.1.1 import dialog correction
+
+User reported an empty Laguna Seca project plus a populated .001 project after one interactive import. The inherited layout dialog also owned the cooperative modal job. Separated it into a non-undoable chooser and a distinct undoable import worker so the dialog can close before worker timer handling. This removes the shared dialog/worker lifecycle, but the exact interactive double-execution cause was not reproduced headlessly. One chooser call creates exactly one project; cancelling a yielded importer removes its partial project while preserving existing content. User interactive retest required. Existing duplicate collections are not automatically deleted.

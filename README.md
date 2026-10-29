@@ -2,7 +2,7 @@
 
 A Blender **4.5+** add-on project for editing and creating F1 25 tracks, based on Track Workshop 0.10.1, with Swofty package export.
 
-**Status: internal Blender foundation build (0.1.0), not public V1.** The Python add-on, project storage and move-only asset assignment are implemented; native export remains unavailable. See [foundation status and tests](docs/FOUNDATION.md). Public V1 targets complete, race-ready track creation across all required variants and game modes. Smaller internal milestones are not the public V1 release.
+**Status: internal Blender foundation build (0.1.1), not public V1.** The Python add-on, project storage and move-only asset assignment are implemented; native export remains unavailable. See [foundation status and tests](docs/FOUNDATION.md). Public V1 targets complete, race-ready track creation across all required variants and game modes. Smaller internal milestones are not the public V1 release.
 
 ## Intended workflows
 
