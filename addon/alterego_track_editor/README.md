@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.1
+# AlterEgo Track Editor — internal preview 0.2.2
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -17,3 +17,5 @@ The facility library curates selected actual geometry and places shared referenc
 This is not V1. New geometry, terrain, collision, native material export, facility insertion, race systems and complete all-mode game validation remain unfinished. BC7 previews need an available Pillow decoder or are reported unsupported. No game assets, executables or runtime backend are bundled. No game loading/gameplay has been verified. See repository docs/NATIVE_EDITING.md for tests and limits.
 
 0.2.1 adds Export Selected Geometry Test under Advanced Files for an imported native mesh. It writes evaluated local geometry to a separate ERP copy using the existing native template/material binding. Only supported single-LOD, single-submesh static families are accepted; required UV pairs and colours must be explicit. It does not mount new objects, update placement/collision, or generate a complete track. Main Native Update still rejects mesh edits. See repository docs/research/static-writer.md.
+
+0.2.2: select an imported native mesh > Project Settings > Advanced Files > Load Geometry LODs. This loads actual native detail levels into separate editing meshes, preserving all UV pairs and colours. Preview buttons show one level at a time; loading again reuses edits. Export Selected Geometry Test includes every companion LOD, including hidden levels, and supports multiple existing material submeshes. Missing LODs or mismatched native material assignments are rejected. The original placed object remains unchanged. Output retains the existing resource family; collision, new asset identities and full track/Swofty integration remain unfinished. Empty LODs, split draws and multi-archive families are currently unsupported. See repository docs/research/static-writer.md for exact checks and limits.

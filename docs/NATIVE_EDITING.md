@@ -1,5 +1,7 @@
 # Native editing preview 0.2.0
 
+Latest0.2.2 adds complete supported static LOD/material family test export and native LOD editing collections. See [current scope](research/static-writer.md).54Python tests pass; main track updates remain placement-only.
+
 0.2.1 adds a separate [static geometry test compiler](research/static-writer.md). Main track update export retains the placement-only limits below. Current Python test total:14project tests +37baseline tests.
 
 29 October 2026. This internal milestone implements part of the five approved development steps. It does not complete public V1.

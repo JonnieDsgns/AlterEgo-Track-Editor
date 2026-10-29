@@ -1,4 +1,21 @@
-# Static geometry compiler — internal 0.2.1
+# Static geometry compiler — internal 0.2.2
+
+## Current 0.2.2 scope
+
+Multiple existing material submeshes and complete supported LOD families now compile together. Shared vertex/index streams are repacked once, with per-submesh base vertices, first-index/count ranges and complete draw ranges. Model bounds cover every authored LOD. Material slot names, native bindings, render graph, LOD thresholds/tables and unknown descriptor fields remain unchanged. There must be one complete draw for each populated submesh; empty far LODs, split draws, interleaved/skinned streams, new material slots and families spanning multiple output ERPs are not supported yet. Missing/extra LODs and incompatible shared-stream ownership are rejected before output.
+
+In Blender, select an imported native mesh and open Project Settings > Advanced Files > Load Geometry LODs. This reads the actual source geometry for all supported detail levels into a separate editing collection. It preserves every native UV pair and vertex colour. Preview buttons show one LOD at a time. Loading again reuses existing edits. Edit these companion meshes normally, then Export Selected Geometry Test from any one of them: hidden companion LODs are included automatically. The original placed preview is retained; these authoring references are ignored by ordinary placement updates. No automatic LOD generation or decimation is implied. Native material assignments must still match each LOD's original binding; new shader/texture export is unfinished.
+
+The standalone ERP output retains the existing resource family identity. It does not create an independently named asset, insert a world object, build collision or produce a complete track/Swofty package. Main Native Update remains placement-only.
+
+## 0.2.2 reproduced checks
+
+- 17 project Python tests plus 37 retained baseline tests pass. New tests cover two LODs/two material submeshes sharing all buffers, exact draw flags, offsets, model bounds, source hashes, opaque data, full UV/colour source readback, incomplete families and conflicting companion ownership across LODs.
+- Headless Blender4.5.0Beta and5.0.1: actual native LOD loading, two material slots, idempotent reuse, one-at-a-time preview, export of hidden LODs, missing-LOD rejection, unchanged original placed mesh/placements and save/reopen. Stable4.5 and full interactive verification remain unperformed.
+- Read-only Monaco template tests: armco_monaco_main_a (3LODs/3submeshes total) and armco_monaco_white_b (3LODs/6submeshes total) compiled authored quads and reopened all resources;14fragments changed in each test.
+- A bounded real Blender5.0.1 case imported one placed armco_monaco_white_b model, loaded its actual3LODs/2material slots each, moved one vertex by0.01 and exported/reopened all levels. Triangle counts100/76/24; deformation delta0.009999990463256836 independently verified from source/output buffers. No whole-track or game acceptance claim.
+
+## Historical 0.2.1 implementation and evidence
 
 ## Source basis
 
@@ -24,4 +41,4 @@ This is offline structural evidence, not game acceptance. No game launch, instal
 
 ## Next work
 
-Multi-submesh/material and complete LOD-family construction; independent resource identities and references; terrain/collision spatial writers; native materials; world mounting and variant composition; complete AC/custom track export and user-run all-mode acceptance. Existing placement export remains a separate path until transactional resource planning supports these new fragments.
+Independent resource identities and references; remaining empty/split/unsupported LOD layouts; terrain/collision spatial writers; native materials; world mounting and variant composition; complete AC/custom track export and user-run all-mode acceptance. Existing placement export remains a separate path until transactional resource planning supports these new fragments.

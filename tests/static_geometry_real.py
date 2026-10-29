@@ -30,7 +30,7 @@ try:
         values={(2,0):[(0.,0.,1.)]*4,(3,0):[(1.,0.,0.,1.)]*4,
             (5,0):[(0.,0.,0.,0.),(1.,0.,0.,0.),(1.,1.,0.,0.),(0.,1.,0.,0.)],
             (5,1):[(0.,0.,0.,0.)]*4,(6,0):[(255,255,255,255)]*4}
-        authored=StaticInput(positions,[0,1,2,0,2,3],{k:values[k] for k in chosen.streams if k!=(1,0)})
+        authored=[StaticInput(positions,[0,1,2,0,2,3],{k:values[k] for k in streams if k!=(1,0)}) for streams in chosen.parts]
         result['template']=chosen.uri
         result['report']=write_test(document.catalog,chosen.uri,authored,output)
     output.parent.mkdir(parents=True,exist_ok=True)

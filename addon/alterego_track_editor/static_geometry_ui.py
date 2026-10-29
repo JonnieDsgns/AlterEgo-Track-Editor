@@ -1,16 +1,120 @@
 """Blender evaluated-mesh adapter for the isolated static geometry compiler."""
 import json
 import math
+import hashlib
 from pathlib import Path
 import bpy
-from bpy.props import StringProperty
+from bpy.props import StringProperty,IntProperty
+from types import SimpleNamespace
+from mathutils import Vector
 from . import jobs,marker_ui,project_store
 from .native_project import TrackDocument
 from .native_ui import AXES
-from .static_geometry import StaticInput,StaticTemplate,write_test
+from .static_geometry import StaticInput,StaticFamily,write_family_test
 
 
-def evaluated_input(context,obj,template):
+def source_identity(obj):
+    return obj.get('ate_geometry_source_id') or obj.get('ate_native_id')
+
+
+def geometry_group(root,obj):
+    if not obj or not obj.get('ate_geometry_source_id'):return None
+    return next((c for c in root.children if c.get('ate_geometry_source_id')==source_identity(obj) and any(o==obj for o in c.objects)),None)
+
+
+def show_lod(context,group,level):
+    target=next((o for o in group.objects if o.ate_geometry_lod==level),None)
+    if target is None:raise ValueError('Requested LOD is missing')
+    for item in list(context.selected_objects):item.select_set(False)
+    for item in group.objects:item.hide_set(item!=target)
+    target.select_set(True);context.view_layer.objects.active=target
+
+
+class ATE_OT_preview_geometry_lod(bpy.types.Operator):
+    bl_idname='alterego_track.preview_geometry_lod'
+    bl_label='Preview Geometry LOD'
+    level:IntProperty(default=0,min=0,max=127)
+    def execute(self,context):
+        root=marker_ui.project(context);group=geometry_group(root,context.active_object) if root else None
+        if group is None:return {'CANCELLED'}
+        show_lod(context,group,self.level)
+        return {'FINISHED'}
+
+
+def load_lods(context,root,obj,document):
+    identity=source_identity(obj);record=document.by_id.get(identity)
+    if record is None or record['render_error'] or not record['model'].endswith('?context=render'):
+        raise ValueError('Select an imported native static model with resolved placement')
+    existing=[c for c in root.children if c.get('ate_geometry_source_id')==identity]
+    if existing:
+        return existing[0],False
+    family=StaticFamily(document.catalog,record['model'][:-len('?context=render')])
+    from .native_materials import PreviewMaterials
+    from .importer import ImportTransaction
+    from .native_ui import matrix
+    transaction=ImportTransaction()
+    try:
+        group=bpy.data.collections.new(obj.name+' Geometry LODs');root.children.link(group)
+        group['ate_geometry_source_id']=identity;group['ate_geometry_family']=family.family
+        previews=PreviewMaterials(document.catalog)
+        for level,template in family.templates.items():
+            parts=template.source_inputs();positions=[];faces=[];face_slots=[];uvs=[[],[],[],[]];colours=[];normals=[]
+            for index,part in enumerate(parts):
+                offset=len(positions)
+                positions.extend(tuple(AXES.to_3x3()@Vector(p)) for p in part.positions)
+                faces.extend(tuple(offset+j for j in part.indices[i:i+3]) for i in range(0,len(part.indices),3))
+                face_slots.extend([index]*(len(part.indices)//3))
+                for channel in range(4):
+                    stream=part.attributes.get((5,channel//2))
+                    uvs[channel].extend([row[(channel%2)*2:(channel%2)*2+2] for row in stream] if stream else [(0.,0.)]*len(part.positions))
+                colours.extend(part.attributes.get((6,0),[(255,255,255,255)]*len(part.positions)))
+                normals.extend(tuple(AXES.to_3x3()@Vector(n)) for n in part.attributes.get((2,0),[(0.,0.,0.)]*len(part.positions)))
+            data=bpy.data.meshes.new(obj.name+f' LOD {level}');data.from_pydata(positions,[],faces)
+            if data.validate(clean_customdata=False):raise ValueError('Native LOD geometry requires repair; import stopped')
+            for polygon,slot in zip(data.polygons,face_slots):polygon.material_index=slot;polygon.use_smooth=True
+            for channel in range(4):
+                layer=data.uv_layers.new(name='UV'+str(channel))
+                for loop in data.loops:layer.data[loop.index].uv=uvs[channel][loop.vertex_index]
+            colour=data.color_attributes.new(name='NativeColour',type='FLOAT_COLOR',domain='POINT')
+            data.color_attributes.active_color=colour
+            for dest,value in zip(colour.data,colours):dest.color=tuple(v/255 for v in value)
+            if all(all(math.isfinite(v) for v in n) and sum(v*v for v in n)>1e-10 for n in normals):
+                data.normals_split_custom_set([normals[l.vertex_index] for l in data.loops])
+            item=bpy.data.objects.new(obj.name+f' LOD {level}',data);group.objects.link(item)
+            item.matrix_world=AXES@matrix(record['world'])@matrix(record['render'])@AXES.inverted()
+            item['tw_project_id']=root['tw_project_id'];item['ate_geometry_source_id']=identity
+            item['ate_reference_only']=True;item.ate_geometry_lod=level;item.hide_render=True
+            for slot in template.slots:data.materials.append(previews.resolve(record['binding'],slot))
+        return group,True
+    except BaseException:
+        transaction.rollback();raise
+
+
+class ATE_OT_load_geometry_lods(bpy.types.Operator):
+    bl_idname='alterego_track.load_geometry_lods'
+    bl_label='Load Geometry LODs'
+    bl_description='Load actual native detail levels into a separate editing collection; existing edits are reused'
+    bl_options={'REGISTER','UNDO'}
+
+    @classmethod
+    def poll(cls,context):return ATE_OT_static_geometry_test.poll(context)
+
+    def execute(self,context):
+        root=marker_ui.project(context);document=None
+        try:
+            if project_store.check_sources(json.loads(root['ate_sources'])):raise ValueError('Source changed; reimport first')
+            document=TrackDocument(root['ate_native_source'],root.get('ate_native_base') or None)
+            group,created=load_lods(context,root,context.active_object,document)
+            show_lod(context,group,min(o.ate_geometry_lod for o in group.objects))
+        except Exception as exc:
+            self.report({'ERROR'},str(exc));return {'CANCELLED'}
+        finally:
+            if document:document.close()
+        self.report({'INFO'},f"{'Loaded' if created else 'Reused'} {len(group.objects)} geometry LODs; original placements retained")
+        return {'FINISHED'}
+
+
+def evaluated_input(context,obj,template,material_index=0):
     if obj.type!='MESH' or obj.data.shape_keys or obj.animation_data:
         raise ValueError('Select an unanimated static mesh without shape keys')
     obj.update_from_editmode()
@@ -22,8 +126,8 @@ def evaluated_input(context,obj,template):
     try:
         data.calc_loop_triangles()
         if not data.loop_triangles:raise ValueError('The selected mesh has no triangles')
-        if any(t.material_index!=0 for t in data.loop_triangles):
-            raise ValueError('The current static template supports one material slot')
+        triangles=[t for t in data.loop_triangles if t.material_index==material_index]
+        if not triangles:raise ValueError(f'Native material slot {material_index+1} has no authored triangles')
         keys=set(template.streams)-{(1,0)}
         required_uv=4 if (5,1) in keys else 2 if (5,0) in keys else 1 if (3,0) in keys else 0
         if len(data.uv_layers)<required_uv:
@@ -34,7 +138,7 @@ def evaluated_input(context,obj,template):
             raise ValueError('This template needs an active vertex colour layer')
         axes=AXES.inverted().to_3x3()
         positions=[];indices=[];attributes={k:[] for k in keys};lookup={}
-        for triangle in data.loop_triangles:
+        for triangle in triangles:
             for corner in triangle.loops:
                 loop=data.loops[corner]
                 p=tuple(axes@data.vertices[loop.vertex_index].co)
@@ -60,17 +164,29 @@ def evaluated_input(context,obj,template):
     finally:evaluated.to_mesh_clear()
 
 
+def evaluated_parts(context,obj,template):
+    # Reject extra material slots with faces rather than silently omitting them.
+    obj.update_from_editmode();obj.data.update();obj.update_tag(refresh={'DATA'});context.view_layer.update()
+    evaluated=obj.evaluated_get(context.evaluated_depsgraph_get())
+    data=evaluated.to_mesh(preserve_all_data_layers=True,depsgraph=context.evaluated_depsgraph_get())
+    try:
+        if any(p.material_index>=len(template.parts) for p in data.polygons):
+            raise ValueError('Authored faces use a material slot outside the native template')
+    finally:evaluated.to_mesh_clear()
+    return [evaluated_input(context,obj,SimpleNamespace(streams=streams),i) for i,streams in enumerate(template.parts)]
+
+
 class ATE_OT_static_geometry_test(bpy.types.Operator):
     bl_idname='alterego_track.export_static_geometry_test'
     bl_label='Export Selected Geometry Test'
-    bl_description='Write evaluated local geometry into a separate native ERP test copy; no track placement, collision or material edits'
+    bl_description='Write a complete evaluated geometry LOD family into a separate native ERP test copy; no placement, collision or material edits'
     filepath:StringProperty(subtype='FILE_PATH')
     filter_glob:StringProperty(default='*.erp',options={'HIDDEN'})
 
     @classmethod
     def poll(cls,context):
         root=marker_ui.ui_project(context);obj=context.active_object
-        return root is not None and bool(root.get('ate_native_source')) and obj is not None and bool(obj.get('ate_native_id')) and obj.type=='MESH' and not jobs.busy(context)
+        return root is not None and bool(root.get('ate_native_source')) and obj is not None and bool(source_identity(obj)) and obj.type=='MESH' and not jobs.busy(context)
 
     def invoke(self,context,event):
         context.window_manager.fileselect_add(self)
@@ -82,26 +198,54 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
             if project_store.check_sources(json.loads(root['ate_sources'])):
                 raise ValueError('Source files changed or are missing; reimport before exporting')
             document=TrackDocument(root['ate_native_source'],root.get('ate_native_base') or None)
-            record=document.by_id.get(obj.get('ate_native_id'))
+            record=document.by_id.get(source_identity(obj))
             if record is None or record['render_error'] or not record['model'].endswith('?context=render'):
                 raise ValueError('Select an imported native static model with resolved render placement')
             if not any(o==obj for o in root.all_objects):raise ValueError('Selected mesh belongs to another project')
+            family=record['model'][:-len('?context=render')]
+            templates=StaticFamily(document.catalog,family)
+            group=geometry_group(root,obj)
+            selected=list(group.objects) if group else [o for o in context.selected_objects if source_identity(o)==source_identity(obj)]
+            if obj not in selected:selected.append(obj)
+            sources={}
             from .native_materials import signature
-            if [m.material.get('ate_native_material') if m.material else None for m in obj.material_slots]!=json.loads(obj.get('ate_imported_materials','[]')):
-                raise ValueError('This geometry test retains original native material bindings')
-            if any(m.material and signature(m.material)!=m.material.get('ate_preview_signature') for m in obj.material_slots):
-                raise ValueError('Edited materials need the native material writer')
-            uri=record['model'][:-len('?context=render')]+'?lod=0&mesh'
-            template=StaticTemplate(document.catalog,uri)
-            report=write_test(document.catalog,uri,evaluated_input(context,obj,template),bpy.path.abspath(self.filepath))
+            from .native.materials import Materials
+            materials=Materials(document.catalog)
+            for item in selected:
+                if not any(o==item for o in root.all_objects):raise ValueError('LOD object belongs to another project')
+                level=item.ate_geometry_lod
+                if level not in templates.templates:raise ValueError(f'LOD {level} is outside this native family')
+                if level in sources:raise ValueError(f'Multiple selected objects claim LOD {level}')
+                expected=[materials.resolve(record['binding'],slot)['id'] for slot in templates.templates[level].slots]
+                actual=[m.material.get('ate_native_material') if m.material else None for m in item.material_slots]
+                if actual[:len(expected)]!=expected:
+                    raise ValueError(f'LOD {level} material slots must match its original native bindings')
+                if any(m.material and signature(m.material)!=m.material.get('ate_preview_signature') for m in item.material_slots):
+                    raise ValueError('Edited materials need the native material writer')
+                for slot in item.material_slots:
+                    if not slot.material or not slot.material.use_nodes:continue
+                    for node in slot.material.node_tree.nodes:
+                        image=node.image if node.type=='TEX_IMAGE' else None
+                        if image and (image.is_dirty or (image.packed_file and hashlib.sha256(image.packed_file.data).hexdigest()!=image.get('ate_original_packed_hash'))):
+                            raise ValueError('Edited textures need the native texture writer')
+                sources[level]=evaluated_parts(context,item,templates.templates[level])
+            report=write_family_test(document.catalog,family,sources,bpy.path.abspath(self.filepath))
             root['ate_last_geometry_test']=json.dumps(report)
         except Exception as exc:
             self.report({'ERROR'},str(exc));return {'CANCELLED'}
         finally:
             if document:document.close()
-        self.report({'INFO'},f"Geometry test: {report['triangles']} triangles; no collision or complete track package")
+        self.report({'INFO'},f"Geometry test: {report['lods']} LODs, {report['triangles']} triangles; no collision or complete track package")
         return {'FINISHED'}
 
 
-def register():bpy.utils.register_class(ATE_OT_static_geometry_test)
-def unregister():bpy.utils.unregister_class(ATE_OT_static_geometry_test)
+def register():
+    bpy.utils.register_class(ATE_OT_preview_geometry_lod)
+    bpy.utils.register_class(ATE_OT_load_geometry_lods)
+    bpy.utils.register_class(ATE_OT_static_geometry_test)
+    bpy.types.Object.ate_geometry_lod=IntProperty(name='Geometry LOD',description='Explicit native detail level for selected geometry test objects; select a complete family to export',default=0,min=0,max=127)
+def unregister():
+    del bpy.types.Object.ate_geometry_lod
+    bpy.utils.unregister_class(ATE_OT_static_geometry_test)
+    bpy.utils.unregister_class(ATE_OT_load_geometry_lods)
+    bpy.utils.unregister_class(ATE_OT_preview_geometry_lod)

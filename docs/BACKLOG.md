@@ -1,5 +1,7 @@
 # Development backlog
 
+Internal 0.2.2: B10 static compiler now handles multiple existing material submeshes and complete supported LOD families/shared streams. Native LOD loading, per-level preview and companion editing are implemented. Terrain/collision/new identities/world/package integration remain open. See [scope and checks](research/static-writer.md).
+
 Internal 0.2.1: B10 now has an isolated single-submesh/single-LOD static topology compiler and Blender test export; full geometry/terrain/collision acceptance remains open. See [writer scope](research/static-writer.md).
 
 Internal 0.2.0 progress: B05 registry/import mapping, B07 reader packaging and B08 native previews implemented; B09 existing matrix updates only; B11 thumbnail library and B13 facility references partial. Full authoring/game acceptance remains open. See [scope and verification](NATIVE_EDITING.md).

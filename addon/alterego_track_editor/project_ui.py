@@ -198,8 +198,18 @@ class ATE_PT_project_advanced(bpy.types.Panel):
         layout.operator('alterego_track.check_sources', icon='CHECKMARK')
         if root.get('ate_native_source'):
             layout.separator()
+            layout.operator('alterego_track.load_geometry_lods',icon='IMPORT')
+            from .static_geometry_ui import geometry_group
+            group=geometry_group(root,context.active_object)
+            if group:
+                row=None
+                for i,item in enumerate(sorted(group.objects,key=lambda o:o.ate_geometry_lod)):
+                    if i%4==0:row=layout.row(align=True)
+                    row.operator('alterego_track.preview_geometry_lod',text=f'LOD {item.ate_geometry_lod}',depress=item==context.active_object).level=item.ate_geometry_lod
+            if context.active_object and (context.active_object.get('ate_native_id') or context.active_object.get('ate_geometry_source_id')):
+                layout.prop(context.active_object,'ate_geometry_lod')
             layout.operator('alterego_track.export_static_geometry_test',icon='MESH_DATA')
-            layout.label(text='Selected local mesh only; no collision or track package')
+            layout.label(text='Geometry family only; no collision or track package')
 
 
 CLASSES = (ATE_OT_new_project, ATE_OT_companion, ATE_OT_add_source, ATE_OT_check_sources,
