@@ -1,0 +1,111 @@
+{
+  "release_sha256": "09bb49ec359ff59d96f06545174b79e4afa1b8bcfac36f35df9e528aeb42dbe4",
+  "python_files": [
+    {
+      "path": "__init__.py",
+      "sha256": "a13ae8cac45292e31cb64cc9df51ea3829c49de477f185099c4166001722e4c2"
+    },
+    {
+      "path": "ai.py",
+      "sha256": "ec19bba766a51f6dcbd56741e011dc93f37d0413b83ee2734aa72f8c01b5bd43"
+    },
+    {
+      "path": "assets.py",
+      "sha256": "f359a72c8b44b6ada5f41e604bb5778f7032c7227c1309b232d5bbf0e42af096"
+    },
+    {
+      "path": "collection_layout.py",
+      "sha256": "76a5d555fa0da143617f5cec6f4d5570b015c4dfb8f9032915cd2fabb3dd1da8"
+    },
+    {
+      "path": "collection_ui.py",
+      "sha256": "5e96e5dc52765ca5079eff3ed0ecef990d65a431c235fd5030a805e6dc68dce9"
+    },
+    {
+      "path": "diagnostics.py",
+      "sha256": "f6ea767b2b9b90a8b65371bdc02bbed518f792ce415aac2c619393033e66e8af"
+    },
+    {
+      "path": "export_build.py",
+      "sha256": "79d8c2bd8940334375d340762c14b5df2697d61e62a04aa9dd93f416beca3aea"
+    },
+    {
+      "path": "export_contract.py",
+      "sha256": "e4df0e6c1d9a0d3c088143b1097ae023143118c3ca6121b48d3c072ddc937ba1"
+    },
+    {
+      "path": "export_ui.py",
+      "sha256": "5b575acd975c860042527dadc0ee2417c779fc46f3992898ad43a3ee18b59364"
+    },
+    {
+      "path": "importer.py",
+      "sha256": "eec576a8bbf00077935a4df70a351804362ae16c2b7a055caa6f6893f97849ac"
+    },
+    {
+      "path": "jobs.py",
+      "sha256": "a786548e489eba4c4e1b84387c0c99197e146cc523038faecacc7a20ecfed6ac"
+    },
+    {
+      "path": "kn5.py",
+      "sha256": "7a80c28118418be432c1c96c0fdf4547447fe92f184950e67e6964bbcb7d7a78"
+    },
+    {
+      "path": "marker_ui.py",
+      "sha256": "b9404e09e197021c2cc75be00b5539022b1cfb6d2f07b0b3cfc2582f7973dffa"
+    },
+    {
+      "path": "markers.py",
+      "sha256": "c2db6ec315f0c3067be8f44d4bfc7c7ec1cbb666bf184ea3d836f87136535300"
+    },
+    {
+      "path": "materials.py",
+      "sha256": "fee14ea8642b7166d631e2898ea2a9419b2dcbebbb62a4546788664ac2c26100"
+    },
+    {
+      "path": "routes.py",
+      "sha256": "6cb2723e038cc0205c70bf1c41a8cbd6fa1b02ab8addda87e87708be088c0168"
+    },
+    {
+      "path": "rule_geometry.py",
+      "sha256": "6fc68583f64872abb7987a957d718b69a510ffe3158630695c85e21c7798c6ea"
+    },
+    {
+      "path": "rules.py",
+      "sha256": "ab6c2470bd4d81ccbb2aefaf4bd80870597bf5681cbf8f294dcd6d790e751ae0"
+    },
+    {
+      "path": "source.py",
+      "sha256": "67a378d4c4d982df9ac898a9b8d10f18aedc816736c7a2ef40a469536c6877b1"
+    },
+    {
+      "path": "surface_ui.py",
+      "sha256": "6fabe7958ccdae6f366596fbfb68f6d7f15943dd77588215c40b323443d29229"
+    },
+    {
+      "path": "surfaces.py",
+      "sha256": "6f9dce7044042bca3a3da69f2e2cedfb91bb9acfd7e80e78609a9acf04553c75"
+    },
+    {
+      "path": "timing.py",
+      "sha256": "93a27cf6d4960a805886742dd308955a1c586118286ddb15213d51f52611582c"
+    },
+    {
+      "path": "timing_geometry.py",
+      "sha256": "456bb956f9f514b203d9de63fde3e2fd86c1b13914892e2104e2e6feace27eed"
+    },
+    {
+      "path": "ui_cache.py",
+      "sha256": "75badbb54c3074219b59a324a8a587eb4c105ba04fb597f552dd4d61047e856c"
+    },
+    {
+      "path": "workflow.py",
+      "sha256": "1b9d609ce4db1083c3a74b0ce1cc12a632d555c649530ea0a415b827879e9572"
+    },
+    {
+      "path": "workspace.py",
+      "sha256": "0ee1b6835a16e33c979255705774c8198792a9f935678429608ed16974c7d134"
+    }
+  ],
+  "native_backend": "Not bundled: exact backend source closure remains pending.",
+  "source": "Track Workshop 0.10.1; authored by Yannick; reused by owner instruction."
+}

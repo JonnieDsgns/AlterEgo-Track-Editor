@@ -1,6 +1,6 @@
 # Source and dependency notices
 
-This initial repository contains newly authored product documentation and audit utilities. It does not include upstream add-on/native backend source or game-derived assets. Source integration and the project's distribution license must be resolved before publishing reused implementation; no upstream license is replaced by this document.
+This repository now includes owner-authorized Track Workshop 0.10.1 Python source and synthetic test fixtures, with original author attribution and baseline hashes. It excludes the packaged native backend/runtime and game-derived assets. The general project distribution license and component notice closure remain documented integration tasks; no upstream license is replaced by this document.
 
 Sources reviewed:
 
