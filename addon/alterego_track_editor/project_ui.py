@@ -209,6 +209,7 @@ class ATE_PT_project_advanced(bpy.types.Panel):
             if context.active_object and (context.active_object.get('ate_native_id') or context.active_object.get('ate_geometry_source_id')):
                 layout.prop(context.active_object,'ate_geometry_lod')
             layout.operator('alterego_track.export_static_geometry_test',icon='MESH_DATA')
+            layout.operator('alterego_track.export_static_geometry_test',text='Export Independent Asset',icon='EXPORT').independent=True
             layout.label(text='Geometry family only; no collision or track package')
 
 

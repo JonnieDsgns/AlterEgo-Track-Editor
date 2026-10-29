@@ -9,6 +9,7 @@ sys.path.insert(0,str(repo/'addon'));sys.path.insert(0,str(repo/'tests'))
 import alterego_track_editor as addon
 addon.register()
 from test_static_family import family_fixture
+from test_static_asset import add_context
 from native_fixtures import make_track,pkg,erp,IDENTITY
 from alterego_track_editor import native_ui,jobs,static_geometry_ui
 from alterego_track_editor.native_project import TrackDocument
@@ -16,10 +17,11 @@ from alterego_track_editor.native.storage import Catalog
 from alterego_track_editor.native.geometry import mesh
 
 source=output/'source';archive=make_track(source);_,family=family_fixture(source/'objects.erp')
+catalog=Catalog();catalog.mount(source/'objects.erp');_,binding=add_context(catalog,source/'objects.erp')
 prefix='eaid://environment_package/tracks/'+source.name+'/wep/';layer=prefix+'objects.layer'
 archive.write_bytes(erp([(prefix+source.name+'_common.wep','World',[pkg({'layers':[layer]})]),
     (layer,'WOInstances',[pkg({'instances':[{'name':'Board','template':'RenderModel','uniqueid':'family-test',
-     'overrides':{'WorldObject':{'transform':('mat4',IDENTITY)},'Model':{'model':family+'?context=render'}}}]})])]))
+     'overrides':{'WorldObject':{'transform':('mat4',IDENTITY)},'Model':{'model':family+'?context=render','mat binding':binding}}}]})])]))
 root,_=jobs.drain(native_ui.import_steps(bpy.context,str(source)))
 native=next(o for o in root.all_objects if o.get('ate_native_id'))
 bpy.context.view_layer.objects.active=native;native.select_set(True)
@@ -70,7 +72,13 @@ bpy.ops.wm.open_mainfile(filepath=str(output/'family.blend'))
 obj=next(o for o in bpy.data.objects if o.get('ate_geometry_source_id') and o.ate_geometry_lod==0)
 bpy.context.view_layer.objects.active=obj
 assert bpy.ops.alterego_track.export_static_geometry_test(filepath=str(output/'reopened.erp'))=={'FINISHED'}
+assert bpy.ops.alterego_track.export_static_geometry_test(filepath=str(output/'separate.erp'),independent=True,asset_name='new_board')=={'FINISHED'}
+manifest=json.loads((output/'separate/asset.json').read_text())
+from alterego_track_editor.static_geometry import StaticFamily
+check=Catalog();check.mount(output/'separate/asset.erp')
+assert len(StaticFamily(check,manifest['family']).templates)==2
+assert family+'?model' not in check.by_uri
 result={'blender':bpy.app.version_string,'native_lod_loading':True,'idempotent_reuse':True,
- 'multi_material_readback':True,'hidden_lods_exported':True,'incomplete_lod_rejected':True,'original_unchanged':True,'save_reopen':True,'game_verified':False}
+ 'multi_material_readback':True,'hidden_lods_exported':True,'incomplete_lod_rejected':True,'original_unchanged':True,'save_reopen':True,'independent_asset_operator':True,'game_verified':False}
 (output/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
 addon.unregister()

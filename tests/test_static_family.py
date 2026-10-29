@@ -32,6 +32,7 @@ def family_fixture(path):
         elif name==family+'?model':
             model=bytearray(fragments[0]);struct.pack_into('<I',model,0,2);struct.pack_into('<I',model,12,2)
             model[72:72]=b'\0'*8;fragments=[bytes(model)]
+            fragments=[bytes(model[:80])+((family+'?lod=0&mesh\0')+(family+'?lod=1&mesh\0')).encode()+b'OPAQUE MODEL TAIL']
         elif name==family+'?ib=0':
             header=bytearray(fragments[0]);struct.pack_into('<I',header,8,6)
             fragments=[bytes(header),struct.pack('<6H',0,1,2,0,1,2)]

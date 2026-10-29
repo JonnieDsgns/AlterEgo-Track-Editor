@@ -1,5 +1,7 @@
 # Static geometry compiler — internal 0.2.2
 
+0.2.3 adds [independent asset export](independent-assets.md). Geometry test mode retains the existing-family behavior below.
+
 ## Current 0.2.2 scope
 
 Multiple existing material submeshes and complete supported LOD families now compile together. Shared vertex/index streams are repacked once, with per-submesh base vertices, first-index/count ranges and complete draw ranges. Model bounds cover every authored LOD. Material slot names, native bindings, render graph, LOD thresholds/tables and unknown descriptor fields remain unchanged. There must be one complete draw for each populated submesh; empty far LODs, split draws, interleaved/skinned streams, new material slots and families spanning multiple output ERPs are not supported yet. Missing/extra LODs and incompatible shared-stream ownership are rejected before output.

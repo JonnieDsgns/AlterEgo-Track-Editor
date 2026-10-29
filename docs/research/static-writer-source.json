@@ -22,5 +22,11 @@
     "source": "owner-supplied AlterEgo reference tree (read only)",
     "sha256": "d1e992f959f64dc4933d4aaa0c57fae368509ff8c3307ba3ab9c95210bb53c9b",
     "use": "format/validation contract reference; no backend binary included"
+  },
+  {
+    "path": "Engine/Services/ErpResourceReferenceRewriter.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "340dd6fdf04aec9b625a628b93f14592b1fe2a62e7aa4835565b39ea24f0fcc4",
+    "use": "typed URI-pool relocation contract reference; no backend binary included"
   }
 ]

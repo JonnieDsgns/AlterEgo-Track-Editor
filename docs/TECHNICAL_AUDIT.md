@@ -1,5 +1,8 @@
 # Technical audit — 29 October 2026
 
+Internal0.2.3: independent static asset ERP export and direct material dependency inventory implemented.56Python tests plus4.5Beta/5.0.1 headless checks pass; two real native families reopen under independent identities. Complete dependency closure, native world/collision/track/Swofty integration remain open. See [scope and evidence](research/independent-assets.md).
+
+
 This is a source/test audit, not acceptance of the rewritten editor. No game launch, installation writes, upstream modifications or native backend execution occurred.
 
 ## Static geometry preview 0.2.2

@@ -4,7 +4,7 @@ import math
 import hashlib
 from pathlib import Path
 import bpy
-from bpy.props import StringProperty,IntProperty
+from bpy.props import StringProperty,IntProperty,BoolProperty
 from types import SimpleNamespace
 from mathutils import Vector
 from . import jobs,marker_ui,project_store
@@ -182,6 +182,15 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
     bl_description='Write a complete evaluated geometry LOD family into a separate native ERP test copy; no placement, collision or material edits'
     filepath:StringProperty(subtype='FILE_PATH')
     filter_glob:StringProperty(default='*.erp',options={'HIDDEN'})
+    independent:BoolProperty(name='Create independent asset',default=False)
+    asset_name:StringProperty(name='Asset name',default='custom_asset')
+
+    def draw(self,context):
+        self.layout.prop(self,'independent')
+        if self.independent:
+            self.layout.prop(self,'asset_name')
+            self.layout.label(text='Writes a new folder beside the selected ERP filename.')
+            self.layout.label(text='Materials remain external; no track placement or collision.')
 
     @classmethod
     def poll(cls,context):
@@ -229,13 +238,21 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
                         if image and (image.is_dirty or (image.packed_file and hashlib.sha256(image.packed_file.data).hexdigest()!=image.get('ate_original_packed_hash'))):
                             raise ValueError('Edited textures need the native texture writer')
                 sources[level]=evaluated_parts(context,item,templates.templates[level])
-            report=write_family_test(document.catalog,family,sources,bpy.path.abspath(self.filepath))
+            if self.independent:
+                import re
+                from .static_asset import write_asset,choose_identity
+                if not re.fullmatch('[a-z0-9_]{1,64}',self.asset_name):raise ValueError('Use lowercase letters, digits and underscores for the asset name')
+                target='eaid://environment_package/tracks/'+root['ate_track_code']+'/objects/'+self.asset_name+'.idf'
+                target=choose_identity(document.catalog,family,target)
+                report=write_asset(document.catalog,family,target,sources,record['binding'],Path(bpy.path.abspath(self.filepath)).with_suffix(''))
+            else:
+                report=write_family_test(document.catalog,family,sources,bpy.path.abspath(self.filepath))
             root['ate_last_geometry_test']=json.dumps(report)
         except Exception as exc:
             self.report({'ERROR'},str(exc));return {'CANCELLED'}
         finally:
             if document:document.close()
-        self.report({'INFO'},f"Geometry test: {report['lods']} LODs, {report['triangles']} triangles; no collision or complete track package")
+        self.report({'INFO'},f"Exported {report['lods']} geometry LODs; no collision or complete track package")
         return {'FINISHED'}
 
 
