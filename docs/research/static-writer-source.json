@@ -28,5 +28,11 @@
     "source": "owner-supplied AlterEgo reference tree (read only)",
     "sha256": "340dd6fdf04aec9b625a628b93f14592b1fe2a62e7aa4835565b39ea24f0fcc4",
     "use": "typed URI-pool relocation contract reference; no backend binary included"
+  },
+  {
+    "path": "Engine/FileFormats/EgoMaterialFormats.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "fbcacd9889c87c867235f8de80bd95bf38dfb5bfa3748c64c8c0656170daa95f",
+    "use": "typed primary/secondary material texture dependency contract reference"
   }
 ]

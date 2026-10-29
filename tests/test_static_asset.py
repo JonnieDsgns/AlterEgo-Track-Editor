@@ -11,7 +11,7 @@ from alterego_track_editor.native.geometry import u32
 def add_context(catalog,path):
     binding='eaid://fixture/board.emb?context=default';labels=b'Surface\0Fence\0'
     names=[b'eaid://fixture/a.material\0',b'eaid://fixture/b.material\0']
-    raw=struct.pack('<3I',2,28,28+len(labels))+struct.pack('<4I',0,0,8,len(names[0]))+labels+b''.join(names)
+    raw=struct.pack('<3I',2,28,16+len(labels))+struct.pack('<4I',0,0,8,len(names[0]))+labels+b''.join(names)
     rows=[(name,r.type_name,[catalog.read(name,i) for i in range(len(r.fragments))]) for name,(_,r) in catalog.by_uri.items()]
     rows.append((binding,'GfxMatBindRes',[raw]));path.write_bytes(erp(rows));c=Catalog();c.mount(path)
     return c,binding

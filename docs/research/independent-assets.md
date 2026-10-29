@@ -1,5 +1,7 @@
 # Independent static assets - preview 0.2.3
 
+Latest0.2.4 adds [dependency packing and native track copies](dependency-packing.md); the0.2.3 behavior below is historical.
+
 30 October 2026. Asset authoring milestone; not a complete track exporter.
 
 ## Workflow

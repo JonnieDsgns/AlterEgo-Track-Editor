@@ -176,6 +176,10 @@ def evaluated_parts(context,obj,template):
     return [evaluated_input(context,obj,SimpleNamespace(streams=streams),i) for i,streams in enumerate(template.parts)]
 
 
+def native_copy_changed(self,context):
+    if self.native_copy:self.bundle_dependencies=False
+
+
 class ATE_OT_static_geometry_test(bpy.types.Operator):
     bl_idname='alterego_track.export_static_geometry_test'
     bl_label='Export Selected Geometry Test'
@@ -184,13 +188,18 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
     filter_glob:StringProperty(default='*.erp',options={'HIDDEN'})
     independent:BoolProperty(name='Create independent asset',default=False)
     asset_name:StringProperty(name='Asset name',default='custom_asset')
+    bundle_dependencies:BoolProperty(name='Bundle materials and textures',description='Copy native materials, texture views/surfaces and external mip files; shared native shaders remain external',default=False)
+    native_copy:BoolProperty(name='Write a native track copy',description='Replace this existing model reference in a separate stock-track folder; collision is retained, not rebuilt',default=False,update=native_copy_changed)
 
     def draw(self,context):
         self.layout.prop(self,'independent')
         if self.independent:
             self.layout.prop(self,'asset_name')
-            self.layout.label(text='Writes a new folder beside the selected ERP filename.')
-            self.layout.label(text='Materials remain external; no track placement or collision.')
+            self.layout.prop(self,'native_copy')
+            row=self.layout.row();row.enabled=not self.native_copy;row.prop(self,'bundle_dependencies')
+            self.layout.label(text='The filename stem becomes a new output folder.')
+            self.layout.label(text='Shared native shaders remain external.')
+            self.layout.label(text='Collision is retained, not rebuilt.' if self.native_copy else 'No track placement or collision generated.')
 
     @classmethod
     def poll(cls,context):
@@ -240,11 +249,17 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
                 sources[level]=evaluated_parts(context,item,templates.templates[level])
             if self.independent:
                 import re
-                from .static_asset import write_asset,choose_identity
+                from .static_asset import write_asset,choose_identity,build_asset
                 if not re.fullmatch('[a-z0-9_]{1,64}',self.asset_name):raise ValueError('Use lowercase letters, digits and underscores for the asset name')
                 target='eaid://environment_package/tracks/'+root['ate_track_code']+'/objects/'+self.asset_name+'.idf'
                 target=choose_identity(document.catalog,family,target)
-                report=write_asset(document.catalog,family,target,sources,record['binding'],Path(bpy.path.abspath(self.filepath)).with_suffix(''))
+                if self.native_copy:
+                    if self.bundle_dependencies:raise ValueError('Track-copy mode currently retains original material/texture dependencies; bundle separately')
+                    resources,asset=build_asset(document.catalog,family,target,sources,record['binding'])
+                    result=document.write_asset_update(record['id'],target,asset['binding'],resources,Path(bpy.path.abspath(self.filepath)).with_suffix(''))
+                    report={**asset,**result}
+                else:
+                    report=write_asset(document.catalog,family,target,sources,record['binding'],Path(bpy.path.abspath(self.filepath)).with_suffix(''),self.bundle_dependencies)
             else:
                 report=write_family_test(document.catalog,family,sources,bpy.path.abspath(self.filepath))
             root['ate_last_geometry_test']=json.dumps(report)

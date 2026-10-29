@@ -171,7 +171,7 @@ class ATE_PT_project(bpy.types.Panel):
             stats=json.loads(root.get('ate_native_stats','{}'))
             layout.label(text=f"{stats.get('mesh_objects',0)} mesh previews; {stats.get('warnings',0)} warnings")
             layout.operator('alterego_track.export_native_update', icon='EXPORT')
-            layout.label(text='Existing placements only; geometry export in development', icon='INFO')
+            layout.label(text='Geometry LOD tools: Advanced Files', icon='INFO')
         else:
             layout.label(text='Native track export is still in development', icon='INFO')
 

@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.3
+# AlterEgo Track Editor — internal preview 0.2.4
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -21,3 +21,5 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.2.2: select an imported native mesh > Project Settings > Advanced Files > Load Geometry LODs. This loads actual native detail levels into separate editing meshes, preserving all UV pairs and colours. Preview buttons show one level at a time; loading again reuses edits. Export Selected Geometry Test includes every companion LOD, including hidden levels, and supports multiple existing material submeshes. Missing LODs or mismatched native material assignments are rejected. The original placed object remains unchanged. Output retains the existing resource family; collision, new asset identities and full track/Swofty integration remain unfinished. Empty LODs, split draws and multi-archive families are currently unsupported. See repository docs/research/static-writer.md for exact checks and limits.
 
 0.2.3: Export Independent Asset writes a new folder (the chosen ERP filename without its extension) containing asset.erp and asset.json. This contains renamed LOD resources and native material bindings, with external material dependencies listed. Names may receive a deterministic suffix to keep opaque record addresses unchanged. It does not insert a world object, export collision, bundle all shaders/textures or create a track package.
+
+0.2.4: Export Independent Asset can bundle supported native materials, texture views/surfaces and external mip files. Shared native shaders remain explicit externals. Alternatively, Write a native track copy embeds edited geometry and retargets the existing selected model/context in a separate native folder copy. This retains original material dependencies, collision and race data; addon package targeting and new object insertion are unfinished. See docs/research/dependency-packing.md.

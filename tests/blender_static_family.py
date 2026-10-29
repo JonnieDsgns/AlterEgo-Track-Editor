@@ -10,14 +10,16 @@ import alterego_track_editor as addon
 addon.register()
 from test_static_family import family_fixture
 from test_static_asset import add_context
+from test_asset_dependencies import fixture as dependency_fixture
 from native_fixtures import make_track,pkg,erp,IDENTITY
 from alterego_track_editor import native_ui,jobs,static_geometry_ui
 from alterego_track_editor.native_project import TrackDocument
 from alterego_track_editor.native.storage import Catalog
 from alterego_track_editor.native.geometry import mesh
 
-source=output/'source';archive=make_track(source);_,family=family_fixture(source/'objects.erp')
-catalog=Catalog();catalog.mount(source/'objects.erp');_,binding=add_context(catalog,source/'objects.erp')
+dependency_root=output/'dependency-source';dependency_root.mkdir()
+catalog,family,binding,mip=dependency_fixture(dependency_root)
+source=catalog.archives[0].path.parent;archive=make_track(source)
 prefix='eaid://environment_package/tracks/'+source.name+'/wep/';layer=prefix+'objects.layer'
 archive.write_bytes(erp([(prefix+source.name+'_common.wep','World',[pkg({'layers':[layer]})]),
     (layer,'WOInstances',[pkg({'instances':[{'name':'Board','template':'RenderModel','uniqueid':'family-test',
@@ -78,7 +80,20 @@ from alterego_track_editor.static_geometry import StaticFamily
 check=Catalog();check.mount(output/'separate/asset.erp')
 assert len(StaticFamily(check,manifest['family']).templates)==2
 assert family+'?model' not in check.by_uri
+assert bpy.ops.alterego_track.export_static_geometry_test(filepath=str(output/'bundled.erp'),independent=True,asset_name='packed_board',bundle_dependencies=True)=={'FINISHED'}
+packed=json.loads((output/'bundled/asset.json').read_text())
+assert packed['bundled_dependency_readback']
+assert (output/'bundled'/packed['mip_files'][0]['file']).read_bytes()==mip.read_bytes()
+assert packed['dependency_plan']['external_shaders']==['eaid://fixture/shared.nefx2']
+assert bpy.ops.alterego_track.export_static_geometry_test(filepath=str(output/'track_copy.erp'),independent=True,asset_name='replacement_board',native_copy=True)=={'FINISHED'}
+updated=TrackDocument(output/'track_copy')
+assert updated.records[0]['model'].startswith('eaid://environment_package/tracks/input/objects/replacement_board')
+new_family=updated.records[0]['model'][:-len('?context=render')]
+assert len(StaticFamily(updated.catalog,new_family).templates)==2
+assert mesh(updated.catalog,new_family+'?lod=1&mesh').bounds==[20.,0.,0.,31.,1.,0.]
+assert (output/'track_copy'/mip.relative_to(source)).read_bytes()==mip.read_bytes()
+updated.close()
 result={'blender':bpy.app.version_string,'native_lod_loading':True,'idempotent_reuse':True,
- 'multi_material_readback':True,'hidden_lods_exported':True,'incomplete_lod_rejected':True,'original_unchanged':True,'save_reopen':True,'independent_asset_operator':True,'game_verified':False}
+ 'multi_material_readback':True,'hidden_lods_exported':True,'incomplete_lod_rejected':True,'original_unchanged':True,'save_reopen':True,'independent_asset_operator':True,'bundled_dependencies':True,'native_track_copy':True,'game_verified':False}
 (output/'result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
 addon.unregister()

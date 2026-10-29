@@ -2,7 +2,7 @@
 
 A Blender **4.5+** add-on project for editing and creating F1 25 tracks, based on Track Workshop 0.10.1, with Swofty package export.
 
-**Status: internal preview 0.2.3, not public V1.** Native F1/Swofty import, existing-object placement updates, variant visibility, material thumbnail libraries and facility references are implemented. Geometry, collision, material and race-data export remain in development. An isolated geometry test compiler now handles multiple material submeshes and complete supported LOD families, with native LOD loading and preview; [scope and tests](docs/research/static-writer.md). See [native editing scope and checks](docs/NATIVE_EDITING.md). Public V1 still targets complete, race-ready creation across all required variants and game modes.
+**Status: internal preview 0.2.4, not public V1.** Native F1/Swofty import, existing-object placement updates, variant visibility, material thumbnail libraries and facility references are implemented. Geometry, collision, material and race-data export remain in development. An isolated geometry test compiler now handles multiple material submeshes and complete supported LOD families, with native LOD loading and preview; [scope and tests](docs/research/static-writer.md). See [native editing scope and checks](docs/NATIVE_EDITING.md). Public V1 still targets complete, race-ready creation across all required variants and game modes.
 
 ## Intended workflows
 
@@ -38,3 +38,5 @@ Game assets, extracted templates/textures, private fixtures, native runtime bina
 Project Settings now offers the project name and Save Project. Source references and companion-manifest controls are optional under collapsed Advanced Files; ordinary .blend saving is sufficient for current editing.
 
 0.2.3 adds [independent static asset export](docs/research/independent-assets.md): renamed complete LOD resources and a material dependency inventory. World/collision/package integration remains unfinished.
+
+0.2.4 adds [material/texture packing and native geometry copy integration](docs/research/dependency-packing.md). Native shader packages remain external; collision and full track readiness remain unfinished.

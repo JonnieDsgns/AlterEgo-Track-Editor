@@ -188,7 +188,7 @@ class TrackDocument:
                 archives[candidate.path.relative_to(self.root)][uri]=data
         return archives, loose
 
-    def write_updated(self, output, replacements):
+    def write_updated(self, output, replacements, asset_resources=None):
         output = Path(output).expanduser().resolve()
         if any((p/'F1_25.exe').is_file() for p in (output, *output.parents)):
             raise ValueError('Choose an output outside the game installation')
@@ -199,6 +199,7 @@ class TrackDocument:
         if not self.is_addon and output.suffix:
             raise ValueError('Choose a new track folder, not an archive filename')
         archives, loose = self._locations(replacements)
+        if asset_resources and (loose or not archives):raise ValueError('Geometry integration requires archived native layers')
         output.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='.ate-update-', dir=output.parent) as temporary:
             stage = Path(temporary)/'track'
@@ -221,11 +222,24 @@ class TrackDocument:
                 archive = Erp(original.path)
                 for uri, data in resources.items():
                     archive.replace_fragment(uri, 0, data)
+                if asset_resources:
+                    from .native.formats.erp import Resource,Fragment,STORED
+                    for name,source,fragments in asset_resources:
+                        existing=[r for r in archive.resources if r.name==name]
+                        if existing:
+                            if len(existing)!=1 or existing[0].kind!=source.kind or len(existing[0].fragments)!=len(fragments) or any(archive.fragment_data(existing[0],i)!=raw for i,raw in enumerate(fragments)):
+                                raise ValueError('Conflicting geometry dependency resource: '+name)
+                            continue
+                        added=[Fragment(f.name,0,len(raw),f.flags,STORED,len(raw),raw) for f,raw in zip(source.fragments,fragments)]
+                        archive.resources.append(Resource(name,source.kind,source.unknown,added,b'\0'*16))
                 archive.write(stage/rel)
                 check = Erp(stage/rel)
                 for uri, data in resources.items():
                     if check.fragment_data(uri, 0) != data:
                         raise ValueError('Native update readback failed')
+                for name,_,fragments in asset_resources or []:
+                    for index,raw in enumerate(fragments):
+                        if check.fragment_data(name,index)!=raw:raise ValueError('Integrated geometry resource readback failed')
             for a in self.catalog.archives:
                 a._unchanged_source()
             if self.is_addon:
@@ -244,6 +258,22 @@ class TrackDocument:
                 stage.rename(output)
         return {'changed_layers': len(replacements), 'game_verified': False,
                 'scope': 'Existing native WorldObject placement edits; other systems preserved'}
+
+    def write_asset_update(self,identity,family,binding,resources,output):
+        if self.is_addon:raise ValueError('Native geometry integration currently requires a track folder; addon archive targeting is unfinished')
+        record=self.by_id[identity]
+        if not record['model'] or record['render_error']:raise ValueError('Select a resolved native static model')
+        doc=self.layers[record['layer']]['doc'];base=('instances',record['index'],'overrides','Model')
+        paths=[base+('model',),base+('mat binding',)]
+        if any(p not in doc.leaves or doc.leaves[p].type!='stri' for p in paths):raise ValueError('Native model/binding fields must already exist')
+        names={name for name,_,_ in resources}
+        if family+'?model' not in names or family+'?render' not in names or binding not in names:
+            raise ValueError('Incomplete independent geometry resources')
+        doc.set(paths[0],family+'?context=render');doc.set(paths[1],binding)
+        result=self.write_updated(output,{record['layer']:doc.to_bytes()},resources)
+        result['scope']='Existing static model retargeted to independent geometry; collision and race data preserved'
+        result['collision_generated']=False
+        return result
 
     def write_patch(self, output, replacements):
         if self.is_addon:

@@ -8,6 +8,7 @@ import re
 import struct
 import json
 import tempfile
+import shutil
 from pathlib import Path
 from .native.geometry import u32,cstring,region
 from .native.materials import binding_table
@@ -111,7 +112,7 @@ def archive_bytes(resources,header=None):
     return bytes(header+info+payload)
 
 
-def write_asset(catalog,family,target,sources,binding,destination):
+def write_asset(catalog,family,target,sources,binding,destination,bundle=False):
     destination=Path(destination).expanduser().resolve()
     if destination.exists():raise ValueError('Choose a new asset output folder')
     if any((p/'F1_25.exe').exists() for p in (destination,*destination.parents)):
@@ -119,8 +120,13 @@ def write_asset(catalog,family,target,sources,binding,destination):
     if any(destination.is_relative_to(Path(p).resolve()) for p in catalog.asset_roots):
         raise ValueError('Choose an output outside the source asset roots')
     resources,report=build_asset(catalog,family,target,sources,binding)
+    from .asset_dependencies import dependency_plan
+    dependencies,files,graph=dependency_plan(catalog,[d['uri'] for d in report['material_dependencies']],bundle)
+    resources.extend(dependencies)
+    report['dependency_plan']=graph
+    report['dependency_closure_complete']=graph['dependency_closure_complete']
     payload=archive_bytes(resources,catalog.get(family+'?model')[0].header)
-    if len(payload)>256*1024**2:raise ValueError('Asset archive exceeds 256 MiB output budget')
+    if len(payload)+sum(f['identity'][0] for f in files if bundle)>512*1024**2:raise ValueError('Asset output exceeds 512 MiB budget')
     destination.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='ate-asset-',dir=destination.parent) as folder:
         file=Path(folder)/'asset.erp';file.write_bytes(payload)
@@ -133,16 +139,44 @@ def write_asset(catalog,family,target,sources,binding,destination):
             for index,raw in enumerate(fragments):
                 if check.read(name,index)!=raw:raise ValueError('Independent asset fragment readback failed')
         report['triangles']=triangles;report['archive_sha256']=hashlib.sha256(payload).hexdigest()
+        staged_files=[]
+        if bundle:
+            for info in files:
+                source=info['source'];before=source.stat()
+                if (before.st_size,before.st_mtime_ns)!=info['identity']:raise ValueError('Mip source changed; reopen before exporting')
+                local='mips/'+info['path'];staged=Path(folder)/local;staged.parent.mkdir(parents=True,exist_ok=True)
+                digest=hashlib.sha256()
+                with source.open('rb') as src,staged.open('xb') as out:
+                    while block:=src.read(1024*1024):out.write(block);digest.update(block)
+                after=source.stat()
+                if (after.st_size,after.st_mtime_ns)!=info['identity'] or staged.stat().st_size!=before.st_size:
+                    raise ValueError('Mip source changed while exporting')
+                staged_files.append((local,staged));info['sha256']=digest.hexdigest()
+            report['mip_files']=[{'native_path':i['path'],'file':'mips/'+i['path'],'sha256':i['sha256'],'bytes':i['identity'][0]} for i in files]
+            check.asset_roots=[Path(folder)/'mips']
+            _,_,reopened=dependency_plan(check,[d['uri'] for d in report['material_dependencies']],False)
+            if reopened['errors']:raise ValueError('Bundled dependency graph failed staged readback')
+            report['bundled_dependency_readback']=True
         manifest=json.dumps(report,indent=2).encode()
-    destination.mkdir() # Exclusive final publication; never replace an existing folder.
-    created=[]
-    try:
-        for name,data in [('asset.erp',payload),('asset.json',manifest)]:
-            with (destination/name).open('xb') as out:
-                created.append(destination/name);out.write(data)
-    except BaseException:
-        for file in created:file.unlink(missing_ok=True)
-        try:destination.rmdir()
-        except OSError:pass
-        raise
+        # Publish from staging while its file snapshots still exist.
+        destination.mkdir()
+        created=[];directories=[]
+        try:
+            for name,data in [('asset.erp',payload),('asset.json',manifest)]:
+                with (destination/name).open('xb') as out:created.append(destination/name);out.write(data)
+            for local,staged in staged_files:
+                dest=destination/local
+                for parent in reversed(dest.parent.relative_to(destination).parents):
+                    candidate=destination/parent
+                    if candidate!=destination and not candidate.exists():candidate.mkdir();directories.append(candidate)
+                if not dest.parent.exists():dest.parent.mkdir();directories.append(dest.parent)
+                with staged.open('rb') as src,dest.open('xb') as out:created.append(dest);shutil.copyfileobj(src,out)
+        except BaseException:
+            for output in reversed(created):output.unlink(missing_ok=True)
+            for directory in reversed(directories):
+                try:directory.rmdir()
+                except OSError:pass
+            try:destination.rmdir()
+            except OSError:pass
+            raise
     return report

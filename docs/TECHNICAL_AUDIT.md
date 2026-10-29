@@ -1,5 +1,8 @@
 # Technical audit — 29 October 2026
 
+Internal0.2.4: typed material/texture dependency packing and stock-folder native geometry retargeting implemented.61Python tests and4.5Beta/5.0.1 headless operator checks pass; two real material/texture bundles pass. Shared shader closure, collision/new object insertion/addon/full-track integration remain unfinished. See [exact scope](research/dependency-packing.md).
+
+
 Internal0.2.3: independent static asset ERP export and direct material dependency inventory implemented.56Python tests plus4.5Beta/5.0.1 headless checks pass; two real native families reopen under independent identities. Complete dependency closure, native world/collision/track/Swofty integration remain open. See [scope and evidence](research/independent-assets.md).
 
 
