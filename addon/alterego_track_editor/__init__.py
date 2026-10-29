@@ -2,7 +2,7 @@
 bl_info = {
     "name": "AlterEgo Track Editor",
     "author": "Yannick",
-    "version": (0, 1, 1),
+    "version": (0, 1, 2),
     "blender": (4, 5, 0),
     "location": "View3D > Sidebar > Track Workshop",
     "description": "Import AC tracks and prepare surfaces, timing, lines, rules and material sources",

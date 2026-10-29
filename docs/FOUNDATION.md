@@ -27,3 +27,7 @@ Run `python -B -m unittest discover -s addon/alterego_track_editor/tests -v` and
 ## 0.1.1 import dialog correction
 
 User reported an empty Laguna Seca project plus a populated .001 project after one interactive import. The inherited layout dialog also owned the cooperative modal job. Separated it into a non-undoable chooser and a distinct undoable import worker so the dialog can close before worker timer handling. This removes the shared dialog/worker lifecycle, but the exact interactive double-execution cause was not reproduced headlessly. One chooser call creates exactly one project; cancelling a yielded importer removes its partial project while preserving existing content. User interactive retest required. Existing duplicate collections are not automatically deleted.
+
+## 0.1.2 project UI simplification
+
+After user feedback, Project Storage becomes Project Settings with a project-name field and Save Project action. Source/hash/companion controls move into a collapsed Advanced Files child panel. No manual manifest management is required to save ordinary work. Pack Project remains a future working feature, not a placeholder button. User reports imports, collection moves and add-on operation working. No fresh interactive UI verification of these cosmetic changes is claimed.

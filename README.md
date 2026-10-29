@@ -2,7 +2,7 @@
 
 A Blender **4.5+** add-on project for editing and creating F1 25 tracks, based on Track Workshop 0.10.1, with Swofty package export.
 
-**Status: internal Blender foundation build (0.1.1), not public V1.** The Python add-on, project storage and move-only asset assignment are implemented; native export remains unavailable. See [foundation status and tests](docs/FOUNDATION.md). Public V1 targets complete, race-ready track creation across all required variants and game modes. Smaller internal milestones are not the public V1 release.
+**Status: internal Blender foundation build (0.1.2), not public V1.** The Python add-on, project storage and move-only asset assignment are implemented; native export remains unavailable. See [foundation status and tests](docs/FOUNDATION.md). Public V1 targets complete, race-ready track creation across all required variants and game modes. Smaller internal milestones are not the public V1 release.
 
 ## Intended workflows
 
@@ -34,3 +34,5 @@ Run `python tools/build_foundation.py` to create the Blender installation ZIP un
 `tools/audit_baseline.py` inventories a user-supplied 0.10.1 release ZIP and compares it to a supplied source folder. It extracts Python/JSON code into ignored private build storage; it does not install the add-on or run packaged binaries. Run it with `--help` for arguments. `tools/check_baseline_registration.py` is a Blender background registration check for that snapshot.
 
 Game assets, extracted templates/textures, private fixtures, native runtime binaries, research databases and machine-specific inventories are excluded. Requirements describe intended capabilities; they do not claim unresolved formats or game behaviour are implemented or verified.
+
+Project Settings now offers the project name and Save Project. Source references and companion-manifest controls are optional under collapsed Advanced Files; ordinary .blend saving is sufficient for current editing.

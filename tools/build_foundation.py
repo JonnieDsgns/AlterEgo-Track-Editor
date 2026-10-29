@@ -6,7 +6,7 @@ import zipfile
 
 root=Path(__file__).resolve().parents[1]
 addon=root/'addon/alterego_track_editor'
-destination=root/'dist/AlterEgo-Track-Editor-0.1.1-foundation.zip'
+destination=root/'dist/AlterEgo-Track-Editor-0.1.2-foundation.zip'
 destination.parent.mkdir(exist_ok=True)
 files=sorted(addon.glob('*.py'))+[addon/'SOURCE_NOTICE.md',addon/'README.md']
 with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as z:

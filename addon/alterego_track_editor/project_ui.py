@@ -130,36 +130,68 @@ class ATE_OT_check_sources(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ATE_OT_save_project(bpy.types.Operator):
+    bl_idname = 'alterego_track.save_project'
+    bl_label = 'Save Project'
+    bl_description = 'Save your editable Blender project; no companion manifest is required'
+
+    def execute(self, context):
+        if bpy.data.filepath:
+            return bpy.ops.wm.save_mainfile('INVOKE_DEFAULT')
+        return bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+
+
 class ATE_PT_project(bpy.types.Panel):
-    bl_label = 'Project Storage'
+    bl_label = 'Project Settings'
     bl_idname = 'ATE_PT_project'
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'AlterEgo Track Editor'
 
+    @classmethod
+    def poll(cls, context):
+        return context.scene.tw_workflow_stage == 'PROJECT'
+
     def draw(self, context):
-        if context.scene.tw_workflow_stage != 'PROJECT':
-            return
         layout = self.layout
-        layout.operator('alterego_track.new_project', icon='ADD')
         root = marker_ui.ui_project(context)
         if root is None:
+            layout.operator('alterego_track.new_project', icon='ADD')
+            layout.label(text='Or import an Assetto Corsa track above')
             return
-        if not root.get('ate_schema'):
-            layout.label(text='Import or create an AlterEgo project', icon='INFO')
+        layout.prop(root, 'name', text='Project name')
+        layout.operator('alterego_track.save_project', icon='FILE_BLEND')
+        layout.label(text='Your work is saved in the Blender file.')
+        for row in json.loads(root.get('ate_source_findings', '[]')):
+            status = 'has changed' if row['status'] == 'CHANGED' else 'is missing or unreadable'
+            layout.label(text=Path(row['path']).name + ' ' + status, icon='ERROR')
+        layout.label(text='Native track export is still in development', icon='INFO')
+
+
+class ATE_PT_project_advanced(bpy.types.Panel):
+    bl_label = 'Advanced Files'
+    bl_idname = 'ATE_PT_project_advanced'
+    bl_parent_id = 'ATE_PT_project'
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'AlterEgo Track Editor'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        root = marker_ui.ui_project(context)
+        if root is None or not root.get('ate_schema'):
             return
-        layout.prop(root, '["ate_track_code"]', text='Track code')
+        layout = self.layout
+        layout.label(text='Optional source and companion-file tools')
+        layout.prop(root, '["ate_track_code"]', text='Track identifier')
         layout.prop(root, '["ate_companion"]', text='Companion folder')
         layout.operator('alterego_track.create_companion', icon='FILE_FOLDER')
         layout.operator('alterego_track.add_source', icon='FILE')
         layout.operator('alterego_track.check_sources', icon='CHECKMARK')
-        for row in json.loads(root.get('ate_source_findings', '[]')):
-            layout.label(text=Path(row['path']).name + ': ' + row['status'], icon='ERROR')
-        layout.label(text='Save the editable project as a .blend')
-        layout.label(text='Development foundation: native export not included', icon='INFO')
 
 
-CLASSES = (ATE_OT_new_project, ATE_OT_companion, ATE_OT_add_source, ATE_OT_check_sources, ATE_PT_project)
+CLASSES = (ATE_OT_new_project, ATE_OT_companion, ATE_OT_add_source, ATE_OT_check_sources,
+           ATE_OT_save_project, ATE_PT_project, ATE_PT_project_advanced)
 
 def register():
     for cls in CLASSES:
