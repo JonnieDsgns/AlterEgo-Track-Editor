@@ -1,6 +1,10 @@
-# Technical audit â€” 29 October 2026
+# Technical audit — 29 October 2026
 
 This is a source/test audit, not acceptance of the rewritten editor. No game launch, installation writes, upstream modifications or native backend execution occurred.
+
+## Static geometry preview 0.2.1
+
+A conservative template-based Python compiler and Blender evaluated-mesh adapter now write standalone native geometry test ERPs. Two added Python tests, Blender4.5Beta/5.0.1 corner/modifier/operator tests and real-template readback pass. This is not complete geometry/terrain/collision export. See [contract, evidence and limits](research/static-writer.md).
 
 ## Native preview 0.2.0
 

@@ -1,5 +1,7 @@
 # Native editing preview 0.2.0
 
+0.2.1 adds a separate [static geometry test compiler](research/static-writer.md). Main track update export retains the placement-only limits below. Current Python test total:14project tests +37baseline tests.
+
 29 October 2026. This internal milestone implements part of the five approved development steps. It does not complete public V1.
 
 ## Implemented

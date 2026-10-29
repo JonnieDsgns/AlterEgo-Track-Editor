@@ -1,0 +1,26 @@
+[
+  {
+    "path": "Engine/Services/EgoBlenderStaticAssetBuilder.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "83f7d6cbe574ecacfe28f46ad21b7871d6be9186a845868146a0e1c38dfebf34",
+    "use": "format/validation contract reference; no backend binary included"
+  },
+  {
+    "path": "Engine/Services/EgoIdfGlbPositionImporter.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "66285dfda837803224cd0ecee4914a6674421718667594ecf7610d3f5dd8dba2",
+    "use": "format/validation contract reference; no backend binary included"
+  },
+  {
+    "path": "Engine/Services/EgoIdfImportProfiles.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "1a98c3ae86015c58e16f8010007fa1c2afa740ce2c5ed93cca184cf0ff4b0a65",
+    "use": "format/validation contract reference; no backend binary included"
+  },
+  {
+    "path": "Engine/FileFormats/EgoIdf3dFormats.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "d1e992f959f64dc4933d4aaa0c57fae368509ff8c3307ba3ab9c95210bb53c9b",
+    "use": "format/validation contract reference; no backend binary included"
+  }
+]

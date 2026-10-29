@@ -196,6 +196,10 @@ class ATE_PT_project_advanced(bpy.types.Panel):
         layout.operator('alterego_track.create_companion', icon='FILE_FOLDER')
         layout.operator('alterego_track.add_source', icon='FILE')
         layout.operator('alterego_track.check_sources', icon='CHECKMARK')
+        if root.get('ate_native_source'):
+            layout.separator()
+            layout.operator('alterego_track.export_static_geometry_test',icon='MESH_DATA')
+            layout.label(text='Selected local mesh only; no collision or track package')
 
 
 CLASSES = (ATE_OT_new_project, ATE_OT_companion, ATE_OT_add_source, ATE_OT_check_sources,
