@@ -2,9 +2,9 @@
 bl_info = {
     "name": "AlterEgo Track Editor",
     "author": "Yannick",
-    "version": (0, 1, 2),
+    "version": (0, 2, 0),
     "blender": (4, 5, 0),
-    "location": "View3D > Sidebar > Track Workshop",
+    "location": "View3D > Sidebar > AlterEgo Track Editor",
     "description": "Import AC tracks and prepare surfaces, timing, lines, rules and material sources",
     "category": "Import-Export",
 }
@@ -13,7 +13,7 @@ import bpy
 from bpy.props import EnumProperty, StringProperty
 from .source import layouts, models
 from . import surface_ui, marker_ui, collection_ui, workspace, routes, rules, timing, materials, ui_cache, workflow, jobs, diagnostics
-from . import export_ui, export_build, project_ui
+from . import export_ui, export_build, project_ui, native_ui, material_library, facility_library
 
 _items = {}
 
@@ -138,6 +138,7 @@ class TW_PT_import(bpy.types.Panel):
             body = self.layout.column()
             body.enabled = not context.scene.tw_job_running
             body.operator("track_workshop.track_folder", icon="FILE_FOLDER")
+            body.operator("alterego_track.import_native", icon="IMPORT")
             body.operator("track_workshop.open_workspace", icon="WORKSPACE")
             body.prop(context.scene, "tw_expert")
             if context.scene.tw_expert:
@@ -174,11 +175,17 @@ def register():
         bpy.utils.register_class(cls)
     workspace.register()
     project_ui.register()
+    native_ui.register()
+    material_library.register()
+    facility_library.register()
     bpy.types.TOPBAR_MT_file_import.append(import_menu)
 
 
 def unregister():
     jobs.reset()
+    facility_library.unregister()
+    material_library.unregister()
+    native_ui.unregister()
     project_ui.unregister()
     workspace.unregister()
     ui_cache.unregister()

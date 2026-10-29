@@ -1,6 +1,10 @@
-# Technical audit — 29 October 2026
+# Technical audit â€” 29 October 2026
 
 This is a source/test audit, not acceptance of the rewritten editor. No game launch, installation writes, upstream modifications or native backend execution occurred.
+
+## Native preview 0.2.0
+
+Native-reader integration and existing-placement updates now have synthetic and bounded real-data evidence. See [exact scope, counts and limitations](NATIVE_EDITING.md). New geometry/collision/material/race export and all-mode game acceptance remain open. AGPL source and retained upstream notices are bundled; the original native backend remains excluded.
 
 ## Reproduced baseline
 

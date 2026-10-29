@@ -99,6 +99,10 @@ class TW_PT_surface(bpy.types.Panel):
         if obj.get("tw_is_route") or obj.get("tw_route_helper") or obj.get("tw_track_limit") or obj.get("tw_pit_rule"):
             layout.label(text="Line helper", icon="CURVE_PATH")
             return
+        if obj.get("ate_native_id") or obj.get("ate_native_preview"):
+            layout.label(text="Original native collision is preserved", icon="INFO")
+            layout.label(text="Native surface editing is still in development")
+            return
         layout.label(text=obj.name, icon="MESH_DATA")
         body = layout.column()
         body.enabled = editable(obj)

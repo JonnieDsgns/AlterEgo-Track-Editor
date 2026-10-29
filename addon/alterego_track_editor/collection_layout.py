@@ -22,6 +22,7 @@ SPEC = (
     ("COMMON", "Common", "EXPORT"),
     ("COMMON_TERRAIN", "Terrain", "COMMON"), ("COMMON_OBJECTS", "Trackside Objects", "COMMON"),
     ("COMMON_FACILITIES", "Facilities", "COMMON"), ("COMMON_VEGETATION", "Vegetation", "COMMON"),
+    ("CLASSIC", "Classic", "EXPORT"),
     ("YEAR_2026", "2026", "EXPORT"),
     ("2026_F1", "F1 2026", "YEAR_2026"), ("2026_MYTEAM", "MyTeam 2026", "YEAR_2026"),
     ("2026_F2", "F2 2026", "YEAR_2026"),
@@ -40,6 +41,7 @@ ASSET_TARGETS = (
     ("2025_F1", "2025 / F1", "F1 2025 only", 7),
     ("2025_MYTEAM", "2025 / MyTeam", "MyTeam 2025 only", 8),
     ("2025_F2", "2025 / F2", "F2 2025 only", 9),
+    ("CLASSIC", "Classic", "Classic native world", 10),
 )
 
 

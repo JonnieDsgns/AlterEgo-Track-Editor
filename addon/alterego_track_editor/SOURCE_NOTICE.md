@@ -4,4 +4,4 @@ Based on Track Workshop 0.10.1, authored by Yannick, reused and modified at the 
 
 The baseline Python modules are retained with existing author attribution. New project storage/UI and move-only assignment are AlterEgo Track Editor changes. docs/research/baseline-source.json records original module hashes. No game-derived assets, original packaged native runtime or .NET backend binaries are included.
 
-A general distribution license for the project has not yet been selected; this notice does not relicense third-party dependencies. Preserve source attribution and resolve component notices before subsequent external-code integration. See repository THIRD_PARTY.md.
+The project is distributed under AGPL-3.0-or-later. Native readers derive from TrackView 0.4.0; provenance and original hashes are recorded in docs/research/native-source.json. Preserve licenses/Swofty-AGPL.txt. See repository LICENSE and THIRD_PARTY.md. No game assets or native backend executables are included.

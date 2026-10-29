@@ -1,17 +1,17 @@
-# AlterEgo Track Editor — internal foundation 0.1.2
+# AlterEgo Track Editor — internal preview 0.2.0
 
-Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: stable internal Workshop operators and properties are retained for compatibility and the two cannot register together.
+Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
-Install the ZIP through Blender Preferences > Add-ons > Install from Disk, then enable AlterEgo Track Editor. The sidebar is AlterEgo Track Editor. Open Workspace creates/reuses its dedicated workspace; no startup workspace is replaced automatically. New Track Project creates the retained collection structure. AC folder import retains the 0.10.1 workflow.
+Install the ZIP through Preferences > Add-ons > Install from Disk. Open Workspace creates/reuses the dedicated workspace. AC import retains the Workshop workflow. Asset assignment moves objects while retaining shared geometry and world placement.
 
-Assign Selected Assets and automatic terrain preparation MOVE existing mesh objects. Shared mesh/material data and parented world placement are retained. Source comparison controls are hidden. Duplicate or make data single-user explicitly through Blender when required.
+Open F1 / Swofty Track imports a stock folder (select an ERP inside it), an addon folder/package, or a raw track package ZIP. Addons may need a base track folder for dependencies. Import retains native identities and every discovered variant, including additional story/previous-season worlds. Variant View changes viewport visibility. Unsupported geometry remains named references; the import report lists preview limitations.
 
-Project Storage records track identity, source-file hashes and a companion folder. Save the .blend normally; Save Companion Manifest writes/updates project.json for the same project only. Record Source File adds a dependency; Check Source Files detects missing/changed files. AC imports record selected model/layout inputs automatically. Re-save the companion manifest after identity/source changes. Source references are currently original paths; Pack Project/automatic relocation is a later implementation task.
+Save Project uses ordinary .blend saving. Packed preview textures survive reopening. Keep original source files available for export. Optional source bookkeeping lives under Advanced Files.
 
-This is NOT public V1 or a complete track exporter. Native export is unavailable and reports that explicitly. The native runtime/backend is not bundled. Source codecs and existing preparation tools remain for staged integration. Game assets, templates and local tests are not bundled.
+Native export supports moving, rotating and scaling supported existing placements. Full Update writes a separate stock-track folder or updated addon/package, preserving original content. Changes-only Swofty packages support stock-track sources only. Outputs must be outside source and game installation. Unsupported edits are rejected. Placement changes do not rebuild separate collision data.
 
-Verification: 37 retained pure Python tests plus 3 storage tests; headless foundation checks in installed Blender 4.5.0 Beta and 5.0.1 cover workspace creation/reuse, no-copy assignment, shared data, parented mirrored/nonuniform transforms, undo/redo, save/reopen, companion storage and source changes. Synthetic AC import/rollback passes in 4.5 Beta. Stable 4.5 and full interactive UI verification remain unperformed. Workspace-creation test runs print a small Blender shutdown allocation warning; no native/game execution was performed.
+The material library offers thumbnail selection, local .blend pack loading, explicit curation and independent copies for objects/selected faces. Native shaders are approximated. Material edits do not yet export native materials/textures. No game-derived pack is bundled.
 
-0.1.2 separates layout confirmation from the modal import worker after a user reported two project roots from one import. Headless one-import/one-root and partial-import cancellation checks pass; interactive dialog/timer behaviour still requires user retest.
+The facility library curates selected actual geometry and places shared references at the cursor, with bounds and possible-overlap warnings. These are placement references; native insertion remains in development.
 
-Project Settings now offers the project name and Save Project. Source references and companion-manifest controls are optional under collapsed Advanced Files; ordinary .blend saving is sufficient for current editing.
+This is not V1. New geometry, terrain, collision, native material export, facility insertion, race systems and complete all-mode game validation remain unfinished. BC7 previews need an available Pillow decoder or are reported unsupported. No game assets, executables or runtime backend are bundled. No game loading/gameplay has been verified. See repository docs/NATIVE_EDITING.md for tests and limits.

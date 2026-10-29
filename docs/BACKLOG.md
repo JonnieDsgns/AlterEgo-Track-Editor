@@ -1,8 +1,10 @@
 # Development backlog
 
+Internal 0.2.0 progress: B05 registry/import mapping, B07 reader packaging and B08 native previews implemented; B09 existing matrix updates only; B11 thumbnail library and B13 facility references partial. Full authoring/game acceptance remains open. See [scope and verification](NATIVE_EDITING.md).
 
 
-29 October 2026 • All tasks refer to public V1 unless explicitly deferred. Status: READY means enough evidence to start, not completed. Acceptance IDs refer to ACCEPTANCE.md.
+
+29 October 2026 â€¢ All tasks refer to public V1 unless explicitly deferred. Status: READY means enough evidence to start, not completed. Acceptance IDs refer to ACCEPTANCE.md.
 
 
 
@@ -56,7 +58,7 @@
 
 | B23 | Test/release readiness and mode matrix | B05/B06/B14/B16/B19/B21 | No false verification, scoped checks, all release blockers explicit; A18 | BUILD |
 
-| B24 | V1 user-run game acceptance and distribution | B01–B23 | All applicable acceptance/mode cells PASS, clean licensed distribution; A01–A21 | NOT READY |
+| B24 | V1 user-run game acceptance and distribution | B01â€“B23 | All applicable acceptance/mode cells PASS, clean licensed distribution; A01â€“A21 | NOT READY |
 
 
 
@@ -64,7 +66,7 @@
 
 
 
-B01–B04 and B06: baseline module package, project state and move-only assignment. In parallel in the development schedule, resolve B05/B07 before downstream integration; no extra agents or separate repos are required. Native import provenance (B08/B09) establishes safe update writing early. AC conversion is the first complete workflow to integrate, while all other required workflows remain public V1 gates.
+B01â€“B04 and B06: baseline module package, project state and move-only assignment. In parallel in the development schedule, resolve B05/B07 before downstream integration; no extra agents or separate repos are required. Native import provenance (B08/B09) establishes safe update writing early. AC conversion is the first complete workflow to integrate, while all other required workflows remain public V1 gates.
 
 
 
@@ -84,7 +86,7 @@ D01 source comparison. D02 barriers/sponsor boards along curves. Neither may blo
 
 
 
-## Foundation batch status — 29 October 2026
+## Foundation batch status â€” 29 October 2026
 
 
 

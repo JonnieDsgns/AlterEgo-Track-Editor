@@ -11,6 +11,7 @@ def initialize(root):
     if not root.get('tw_project_id'):
         root['tw_project_id'] = str(uuid.uuid4())
     root['ate_schema'] = project_store.SCHEMA
+    root['ate_required_variants'] = 'f1,f1_myteam,f2,f1_26,f1_26_myteam,f2_26,classic'
     if not root.get('ate_track_code'):
         root['ate_track_code'] = 'new_track'
     if not root.get('ate_sources'):
@@ -165,7 +166,14 @@ class ATE_PT_project(bpy.types.Panel):
         for row in json.loads(root.get('ate_source_findings', '[]')):
             status = 'has changed' if row['status'] == 'CHANGED' else 'is missing or unreadable'
             layout.label(text=Path(row['path']).name + ' ' + status, icon='ERROR')
-        layout.label(text='Native track export is still in development', icon='INFO')
+        if root.get('ate_native_source'):
+            layout.prop(context.scene,'ate_native_view')
+            stats=json.loads(root.get('ate_native_stats','{}'))
+            layout.label(text=f"{stats.get('mesh_objects',0)} mesh previews; {stats.get('warnings',0)} warnings")
+            layout.operator('alterego_track.export_native_update', icon='EXPORT')
+            layout.label(text='Existing placements only; geometry export in development', icon='INFO')
+        else:
+            layout.label(text='Native track export is still in development', icon='INFO')
 
 
 class ATE_PT_project_advanced(bpy.types.Panel):

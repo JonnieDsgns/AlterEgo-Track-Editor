@@ -1,0 +1,50 @@
+[
+  {
+    "path": "native/geometry.py",
+    "source": "TrackView 0.4.0/geometry.py",
+    "sha256": "7fe5ede5eb82ceb98b4dc67334bf13df75b7669465d04793302420e871891599",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/materials.py",
+    "source": "TrackView 0.4.0/materials.py",
+    "sha256": "871460bb404b64dc9edc93f5586bd6a2e2910b0800f9caf328903f5306633763",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/storage.py",
+    "source": "TrackView 0.4.0/storage.py",
+    "sha256": "57f91b18334eab661f0cf64d693df90c4297c0c0e9e00136b9100e9a4c25ad6c",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/scene.py",
+    "source": "TrackView 0.4.0/scene.py",
+    "sha256": "158d28e5c896cd6b7ffa341d1fab97b65a49722d05fe20f33ca1c759874ff16d",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/addons.py",
+    "source": "TrackView 0.4.0/addons.py",
+    "sha256": "9f89d80963350113e1848cef36ace5e5a5b5ed24d263a6d14fe4ee432badee59",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/terrain_materials.py",
+    "source": "TrackView 0.4.0/terrain_materials.py",
+    "sha256": "11817205fea2e7a137151a142c66cb17e89f73fbcc1b7b86dd31f04adbdd672e",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/formats/erp.py",
+    "source": "TrackView 0.4.0/formats/erp.py",
+    "sha256": "029daa633b56ad217ea28715671f888a4b46a1cc56c1f0e3984d46fe4aa662c7",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/formats/pkg.py",
+    "source": "TrackView 0.4.0/formats/pkg.py",
+    "sha256": "ec43a8d5c1c71db6fd8479a9e77881b7b82507c7816ebdd069061daf99777277",
+    "license": "AGPL-3.0-or-later"
+  }
+]
