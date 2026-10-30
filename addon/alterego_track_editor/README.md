@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.6
+# AlterEgo Track Editor — internal preview 0.2.9
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -27,3 +27,9 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.2.5: the Collision panel loads native cells around the 3D cursor. Assign Physics Code edits selected faces (Edit mode) or selected cells (Object mode). Export Collision Surface Update writes a separate copy while retaining geometry/search data. Shared-resource edits apply to its original references; other authoring workflows are not combined. Moved/modified native geometry is rejected. Authored meshes with Collision enabled and an explicit code can export a Legacy Collision Test (.jpak, version0x20002), which is not a verified F1 25 replacement. Native0x20004 geometry generation and visual-terrain writing remain unfinished. See docs/research/collision.md.
 
 0.2.6: select imported native static props and choose Duplicate as New Placement. The copy shares the source model and stays in the same layer/variants; move it, then Export Updated Native Track. Swofty Update Addon now defaults to Composable Edits (launcher patch-pkg set/clone edits that combine with other addons); Whole Layers keeps full-layer replacement. Functional objects (grid, garages, cameras, audio, lights, triggers and similar) cannot be duplicated, and plain Blender copies are rejected at export. New placements are visual only: no collision, precomputed visibility or lightmap data is generated. The export report text lists generated names/uniqueids. See docs/research/native-insertion.md.
+
+0.2.7: after Load Geometry LODs and editing the LOD meshes, Place Edited Asset adds a new placement of that edited model at the 3D cursor; the original object stays unchanged. Export Updated Native Track compiles the asset from all LODs and embeds it (full export) or ships it in the update addon. New assets keep the source materials and have no collision.
+
+0.2.8: deleting an imported static prop is exported as removal (Updated Native Files or a Whole Layers update addon). Functional objects and props referenced by others cannot be deleted; props in precomputed visibility data require Allow deleting PVS-listed objects in the export dialog. Use Edited Asset for Selected points selected existing props at the active edited LOD family; Restore Original Model undoes it.
+
+0.2.9: select a numbered grid slot, pit box, pit garage or F1 garage (2 or higher) and choose Add Next Race Placement. Numbers and garage links are assigned at export, contiguously in every variant that loads the layer; additions that would leave a gap are refused. Database grid size, AI pit data and garage props are unchanged. See docs/research/race-placements.md.

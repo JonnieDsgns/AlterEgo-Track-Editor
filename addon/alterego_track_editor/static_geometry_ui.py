@@ -2,6 +2,8 @@
 import json
 import math
 import hashlib
+import re
+import uuid
 from pathlib import Path
 import bpy
 from bpy.props import StringProperty,IntProperty,BoolProperty
@@ -176,6 +178,150 @@ def evaluated_parts(context,obj,template):
     return [evaluated_input(context,obj,SimpleNamespace(streams=streams),i) for i,streams in enumerate(template.parts)]
 
 
+def family_sources(context,root,document,record,templates,selected):
+    """Evaluated authored inputs per LOD, with native material bindings checked against the source."""
+    sources={}
+    from .native_materials import signature
+    from .native.materials import Materials
+    materials=Materials(document.catalog)
+    for item in selected:
+        if not any(o==item for o in root.all_objects):raise ValueError('LOD object belongs to another project')
+        level=item.ate_geometry_lod
+        if level not in templates.templates:raise ValueError(f'LOD {level} is outside this native family')
+        if level in sources:raise ValueError(f'Multiple selected objects claim LOD {level}')
+        expected=[materials.resolve(record['binding'],slot)['id'] for slot in templates.templates[level].slots]
+        actual=[m.material.get('ate_native_material') if m.material else None for m in item.material_slots]
+        if actual[:len(expected)]!=expected:
+            raise ValueError(f'LOD {level} material slots must match its original native bindings')
+        if any(m.material and signature(m.material)!=m.material.get('ate_preview_signature') for m in item.material_slots):
+            raise ValueError('Edited materials need the native material writer')
+        for slot in item.material_slots:
+            if not slot.material or not slot.material.use_nodes:continue
+            for node in slot.material.node_tree.nodes:
+                image=node.image if node.type=='TEX_IMAGE' else None
+                if image and (image.is_dirty or (image.packed_file and hashlib.sha256(image.packed_file.data).hexdigest()!=image.get('ate_original_packed_hash'))):
+                    raise ValueError('Edited textures need the native texture writer')
+        sources[level]=evaluated_parts(context,item,templates.templates[level])
+    return sources
+
+
+ASSET_NAME=re.compile('[a-z0-9_]{1,64}')
+
+
+def compile_placed_assets(context,root,document,insertions):
+    """Compile each (LOD group, asset name) once and attach it to the insertions that place it."""
+    from .static_asset import choose_identity,build_asset
+    compiled,names={},{}
+    for spec in insertions:
+        key=spec.pop('asset_key',None)
+        if key is None:continue
+        source,name=key
+        if names.setdefault(name,source)!=source:raise ValueError('Asset name '+name+' is used for two different geometry groups')
+        if key not in compiled:
+            record=document.by_id.get(source)
+            group=next((c for c in root.children if c.get('ate_geometry_source_id')==source),None)
+            if record is None or group is None or not group.objects:raise ValueError('Placed asset '+name+' has no loaded geometry LODs')
+            family=record['model'][:-len('?context=render')]
+            templates=StaticFamily(document.catalog,family)
+            missing=set(templates.templates)-{o.ate_geometry_lod for o in group.objects}
+            if missing:raise ValueError(f'Placed asset {name} is missing LODs {sorted(missing)}')
+            sources=family_sources(context,root,document,record,templates,list(group.objects))
+            target=choose_identity(document.catalog,family,'eaid://environment_package/tracks/'+root['ate_track_code']+'/objects/'+name+'.idf')
+            resources,report=build_asset(document.catalog,family,target,sources,record['binding'])
+            compiled[key]={'name':name,'family':report['family'],'binding':report['binding'],'resources':resources}
+        spec['asset']=compiled[key]
+    return compiled
+
+
+class ATE_OT_place_edited_asset(bpy.types.Operator):
+    bl_idname='alterego_track.place_edited_asset'
+    bl_label='Place Edited Asset'
+    bl_description='Add a new native placement of this edited LOD family at the 3D cursor; the original object is unchanged. Visual only, no collision'
+    bl_options={'REGISTER','UNDO'}
+    asset_name:StringProperty(name='Asset name',default='custom_asset')
+
+    @classmethod
+    def poll(cls,context):
+        root=marker_ui.ui_project(context)
+        return root is not None and context.mode=='OBJECT' and geometry_group(root,context.active_object) is not None and not jobs.busy(context)
+
+    def invoke(self,context,event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self,context):
+        root=marker_ui.project(context);group=geometry_group(root,context.active_object)
+        if not ASSET_NAME.fullmatch(self.asset_name):
+            self.report({'ERROR'},'Use lowercase letters, digits and underscores for the asset name');return {'CANCELLED'}
+        identity=group['ate_geometry_source_id']
+        source=next((o for o in root.all_objects if o.get('ate_native_id')==identity),None)
+        if source is None or not source.get('ate_native_cloneable',True):
+            self.report({'ERROR'},'Only static props (RenderModel placements) can be placed as new assets');return {'CANCELLED'}
+        lowest=min(group.objects,key=lambda o:o.ate_geometry_lod)
+        placed=bpy.data.objects.new(self.asset_name+' placement',lowest.data)  # Shares the editable LOD mesh.
+        for collection in source.users_collection:collection.objects.link(placed)
+        pose=source.matrix_world.copy();pose.translation=context.scene.cursor.location
+        placed.matrix_world=pose
+        for key in ('ate_imported_roles','ate_native_render','ate_native_template'):
+            if key in source:placed[key]=source[key]
+        placed['tw_project_id']=root['tw_project_id']
+        placed['ate_native_clone_of']=identity;placed['ate_native_insert_id']=uuid.uuid4().hex
+        placed['tw_asset_id']=placed['ate_native_insert_id']
+        placed['ate_asset_source']=identity;placed['ate_asset_name']=self.asset_name
+        for item in context.selected_objects:item.select_set(False)
+        placed.select_set(True);context.view_layer.objects.active=placed
+        self.report({'INFO'},'Placed new asset; it is compiled from all LODs at export. Visual only: no collision')
+        return {'FINISHED'}
+
+
+class ATE_OT_use_edited_asset(bpy.types.Operator):
+    bl_idname='alterego_track.use_edited_asset'
+    bl_label='Use Edited Asset for Selected'
+    bl_description='Point the selected existing static props at the active edited LOD family; placements are kept'
+    bl_options={'REGISTER','UNDO'}
+    asset_name:StringProperty(name='Asset name',default='custom_asset')
+
+    @classmethod
+    def poll(cls,context):return ATE_OT_place_edited_asset.poll(context)
+
+    def invoke(self,context,event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self,context):
+        root=marker_ui.project(context);group=geometry_group(root,context.active_object)
+        if not ASSET_NAME.fullmatch(self.asset_name):
+            self.report({'ERROR'},'Use lowercase letters, digits and underscores for the asset name');return {'CANCELLED'}
+        targets=[o for o in context.selected_objects if o.get('ate_native_id') and o.get('tw_project_id')==root['tw_project_id']]
+        if not targets or any(not o.get('ate_native_cloneable',True) for o in targets):
+            self.report({'ERROR'},'Select imported static props, then make an edited LOD active');return {'CANCELLED'}
+        lowest=min(group.objects,key=lambda o:o.ate_geometry_lod)
+        for obj in targets:
+            if not obj.get('ate_asset_source'):obj['ate_original_mesh']=obj.data.name if obj.data else ''
+            obj.data=lowest.data  # Viewport shows the edited family; export compiles every LOD.
+            obj['ate_asset_source']=group['ate_geometry_source_id'];obj['ate_asset_name']=self.asset_name
+        self.report({'INFO'},f'{len(targets)} placements will use asset {self.asset_name} at export; collision unchanged')
+        return {'FINISHED'}
+
+
+class ATE_OT_restore_original_model(bpy.types.Operator):
+    bl_idname='alterego_track.restore_original_model'
+    bl_label='Restore Original Model'
+    bl_description='Undo Use Edited Asset for the selected existing placements'
+    bl_options={'REGISTER','UNDO'}
+
+    def execute(self,context):
+        restored=0
+        for obj in context.selected_objects:
+            if not obj.get('ate_native_id') or not obj.get('ate_asset_source'):continue
+            original=bpy.data.meshes.get(obj.get('ate_original_mesh',''))
+            if original is None:
+                self.report({'ERROR'},'Original preview mesh is missing for '+obj.name);return {'CANCELLED'}
+            obj.data=original
+            for key in ('ate_asset_source','ate_asset_name','ate_original_mesh'):del obj[key]
+            restored+=1
+        self.report({'INFO'},f'Restored {restored} original models')
+        return {'FINISHED'}
+
+
 def native_copy_changed(self,context):
     if self.native_copy:self.bundle_dependencies=False
 
@@ -225,32 +371,10 @@ class ATE_OT_static_geometry_test(bpy.types.Operator):
             group=geometry_group(root,obj)
             selected=list(group.objects) if group else [o for o in context.selected_objects if source_identity(o)==source_identity(obj)]
             if obj not in selected:selected.append(obj)
-            sources={}
-            from .native_materials import signature
-            from .native.materials import Materials
-            materials=Materials(document.catalog)
-            for item in selected:
-                if not any(o==item for o in root.all_objects):raise ValueError('LOD object belongs to another project')
-                level=item.ate_geometry_lod
-                if level not in templates.templates:raise ValueError(f'LOD {level} is outside this native family')
-                if level in sources:raise ValueError(f'Multiple selected objects claim LOD {level}')
-                expected=[materials.resolve(record['binding'],slot)['id'] for slot in templates.templates[level].slots]
-                actual=[m.material.get('ate_native_material') if m.material else None for m in item.material_slots]
-                if actual[:len(expected)]!=expected:
-                    raise ValueError(f'LOD {level} material slots must match its original native bindings')
-                if any(m.material and signature(m.material)!=m.material.get('ate_preview_signature') for m in item.material_slots):
-                    raise ValueError('Edited materials need the native material writer')
-                for slot in item.material_slots:
-                    if not slot.material or not slot.material.use_nodes:continue
-                    for node in slot.material.node_tree.nodes:
-                        image=node.image if node.type=='TEX_IMAGE' else None
-                        if image and (image.is_dirty or (image.packed_file and hashlib.sha256(image.packed_file.data).hexdigest()!=image.get('ate_original_packed_hash'))):
-                            raise ValueError('Edited textures need the native texture writer')
-                sources[level]=evaluated_parts(context,item,templates.templates[level])
+            sources=family_sources(context,root,document,record,templates,selected)
             if self.independent:
-                import re
                 from .static_asset import write_asset,choose_identity,build_asset
-                if not re.fullmatch('[a-z0-9_]{1,64}',self.asset_name):raise ValueError('Use lowercase letters, digits and underscores for the asset name')
+                if not ASSET_NAME.fullmatch(self.asset_name):raise ValueError('Use lowercase letters, digits and underscores for the asset name')
                 target='eaid://environment_package/tracks/'+root['ate_track_code']+'/objects/'+self.asset_name+'.idf'
                 target=choose_identity(document.catalog,family,target)
                 if self.native_copy:
@@ -275,9 +399,15 @@ def register():
     bpy.utils.register_class(ATE_OT_preview_geometry_lod)
     bpy.utils.register_class(ATE_OT_load_geometry_lods)
     bpy.utils.register_class(ATE_OT_static_geometry_test)
+    bpy.utils.register_class(ATE_OT_place_edited_asset)
+    bpy.utils.register_class(ATE_OT_use_edited_asset)
+    bpy.utils.register_class(ATE_OT_restore_original_model)
     bpy.types.Object.ate_geometry_lod=IntProperty(name='Geometry LOD',description='Explicit native detail level for selected geometry test objects; select a complete family to export',default=0,min=0,max=127)
 def unregister():
     del bpy.types.Object.ate_geometry_lod
+    bpy.utils.unregister_class(ATE_OT_restore_original_model)
+    bpy.utils.unregister_class(ATE_OT_use_edited_asset)
+    bpy.utils.unregister_class(ATE_OT_place_edited_asset)
     bpy.utils.unregister_class(ATE_OT_static_geometry_test)
     bpy.utils.unregister_class(ATE_OT_load_geometry_lods)
     bpy.utils.unregister_class(ATE_OT_preview_geometry_lod)

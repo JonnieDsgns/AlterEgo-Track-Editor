@@ -69,7 +69,7 @@ def fnv(raw):
 
 def canonical_pkg(value,name=b'INST'):
     """Independent stock-style encoder: breadth-first chunks, FNV-ordered version-1 dictionaries."""
-    order=['stri','woid','mat4','ui32','bool'];strides={'woid':16,'mat4':64,'ui32':4,'bool':1}
+    order=['stri','woid','mat4','ui32','si32','bool'];strides={'woid':16,'mat4':64,'ui32':4,'si32':4,'bool':1}
     pools={t:bytearray() for t in order};seen={t:{} for t in order}
     def scalar(typ,raw):
         if raw not in seen[typ]:
@@ -79,7 +79,7 @@ def canonical_pkg(value,name=b'INST'):
     def leaf(v):
         if isinstance(v,str):return scalar('stri',v.encode())
         typ,x=v
-        raw={'woid':lambda:bytes(x),'mat4':lambda:struct.pack('<16f',*x),'ui32':lambda:struct.pack('<I',x),'bool':lambda:bytes([x])}[typ]()
+        raw={'woid':lambda:bytes(x),'mat4':lambda:struct.pack('<16f',*x),'ui32':lambda:struct.pack('<I',x),'si32':lambda:struct.pack('<i',x),'bool':lambda:bytes([x])}[typ]()
         return scalar(typ,raw)
     data=bytearray(b'!pkg'+name+b'\0'*8);queue=[(None,value)];cursor=0
     while cursor<len(queue):
@@ -139,3 +139,44 @@ def make_canonical_track(folder,mirror=False):
     path=folder/'wep'/(folder.name+'_common.erp');path.write_bytes(erp(resources))
     if mirror:(folder/'wep'/'mirror.erp').write_bytes(path.read_bytes())
     return path,payload
+
+
+def make_reference_track(folder):
+    """Canonical layer whose barrier is listed in a PVS object table and whose board is a lightmap bake source."""
+    folder=Path(folder);(folder/'wep').mkdir(parents=True)
+    prefix='eaid://environment_package/tracks/'+folder.name+'/wep/';layer=prefix+'objects.layer'
+    family='eaid://fixture/barrier'
+    barrier=prop('objects$barrier_a',1,family,5);board=prop('objects$board_a',2,family,7);spare=prop('objects$spare_a',3,family,9)
+    barrier['overrides']['Render']['lightmap_bake_source']='objects$board_a'
+    table=struct.pack('<III',2,40,len('objects$barrier_a'))+b'objects$barrier_a\0'+b'\0'*8
+    resources=[(prefix+folder.name+'_common.wep','World',[pkg({'layers':[layer]})]),
+        (layer,'WOInstances',[canonical_pkg({'instances':[barrier,board,spare],'layer':'objects'})]),
+        (family+'?render','ModelProxyRes',[render_nodes()]),(prefix+folder.name+'_f1.header.pvsbin','PVSObjIDRes',[table])]
+    path=folder/'wep'/(folder.name+'_common.erp');path.write_bytes(erp(resources))
+    return path
+
+
+def make_race_track(folder):
+    """Stock-like vehicle layers: base in common, extra numbers in one variant, and a variant without vehicles."""
+    folder=Path(folder);(folder/'wep').mkdir(parents=True)
+    prefix='eaid://environment_package/tracks/'+folder.name+'/wep/';base=prefix+'vehicles.layer';extra=prefix+'vehicles_myteam.layer'
+    def placement(name,group,n,x):
+        m=IDENTITY[:];m[12]=x;vp={'Group':group}
+        if n>1:vp['Id']=('ui32',n)  # Stock entry 1 omits Id.
+        return {'name':name,'template':'VehiclePlacement','uniqueid':('woid',hashlib.md5(name.encode()).digest()),
+            'overrides':{'VehPlacement':vp,'WorldObject':{'transform':('mat4',m)}}}
+    def garage(n,x):
+        m=IDENTITY[:];m[12]=x;uid=lambda k:('woid',hashlib.md5(f'base$PitGarage{k}'.encode()).digest())
+        return {'name':f'base$F1Garage{n}','template':'F1Garage','uniqueid':('woid',hashlib.md5(f'base$F1Garage{n}'.encode()).digest()),
+            'overrides':{'F1Garage':{'id':('si32',n),'left car placement':uid(2*n-1),'right car placement':uid(2*n)},'WorldObject':{'transform':('mat4',m)}}}
+    items=[placement('base$GridSlot1','GridWheelMarker',1,0),placement('base$GridSlot2','GridWheelMarker',2,8)]
+    items+=[placement(f'base$PitGarage{n}','Garage',n,100+n*5) for n in range(1,5)]+[garage(n,100+n*10) for n in (1,2)]
+    items+=[placement(f'base$PitBox{n}','Pit',n,200+n*10) for n in (1,2)]
+    resources=[(prefix+folder.name+'_common.wep','World',[pkg({'layers':[base]})]),
+        (prefix+folder.name+'_f1_myteam.wep','World',[pkg({'layers':[extra]})]),
+        (prefix+folder.name+'_f1.wep','World',[pkg({'layers':[prefix+'scenery.layer']})]),
+        (prefix+'scenery.layer','WOInstances',[canonical_pkg({'instances':[],'layer':'scenery'})]),
+        (base,'WOInstances',[canonical_pkg({'instances':items,'layer':'vehicles'})]),
+        (extra,'WOInstances',[canonical_pkg({'instances':[placement('myteam$GridSlot3','GridWheelMarker',3,16)],'layer':'vehicles_myteam'})])]
+    path=folder/'wep'/(folder.name+'_common.erp');path.write_bytes(erp(resources))
+    return path

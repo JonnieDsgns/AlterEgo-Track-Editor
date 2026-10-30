@@ -110,3 +110,32 @@ class NativeInsertionTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class NativeDeletionTests(unittest.TestCase):
+    def test_static_prop_deletion_guards_and_whole_layer_export(self):
+        from native_fixtures import make_reference_track
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);make_reference_track(root/'track');doc=TrackDocument(root/'track')
+            by_name={r['name']:r for r in doc.records}
+            barrier,board,spare=(by_name['objects$'+n] for n in ('barrier_a','board_a','spare_a'))
+            with self.assertRaisesRegex(ValueError,'reference'):doc.apply({},deletions=[board['id']])
+            with self.assertRaisesRegex(ValueError,'precomputed visibility'):doc.apply({},deletions=[barrier['id']])
+            # The spare is deleted while a duplicate of it is inserted; the duplicate keeps its copied entry.
+            replacements=doc.apply({},[{'id':'a1'*16,'source':spare['id'],'world':moved(20)}],deletions=[spare['id'],barrier['id']],allow_pvs_deletions=True)
+            self.assertEqual({d['name']:d['pvs_listed'] for d in doc.deleted},{'objects$barrier_a':True,'objects$spare_a':False})
+            self.assertIsNone(doc.layer_edits[spare['layer']])
+            with self.assertRaisesRegex(ValueError,'no deletions'):doc.write_patch(root/'pkg.zip',replacements,'patch-pkg')
+            self.assertEqual(doc.write_patch(root/'whole.zip',replacements),1)
+            result=doc.write_updated(root/'out'/'track',replacements);self.assertEqual(len(result['deleted_placements']),2)
+            check=TrackDocument(root/'out'/'track')
+            self.assertEqual(sorted(r['name'] for r in check.records),['objects$board_a','objects$spare_a_ate_'+'a1'*6])
+            self.assertEqual(next(r for r in check.records if r['name']=='objects$board_a')['world'],board['world'])
+            check.close();doc.close()
+
+    def test_functional_deletion_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_canonical_track(Path(d)/'track');doc=TrackDocument(Path(d)/'track')
+            grid=next(r for r in doc.records if r['name']=='objects$GridSlot1')
+            with self.assertRaisesRegex(ValueError,'only static props'):doc.apply({},deletions=[grid['id']])
+            doc.close()

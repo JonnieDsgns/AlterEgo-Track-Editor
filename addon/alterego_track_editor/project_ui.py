@@ -171,6 +171,7 @@ class ATE_PT_project(bpy.types.Panel):
             stats=json.loads(root.get('ate_native_stats','{}'))
             layout.label(text=f"{stats.get('mesh_objects',0)} mesh previews; {stats.get('warnings',0)} warnings")
             layout.operator('alterego_track.duplicate_native_placement', icon='DUPLICATE')
+            layout.operator('alterego_track.add_race_placement', icon='SORTBYEXT')
             layout.operator('alterego_track.export_native_update', icon='EXPORT')
             layout.label(text='Geometry LOD tools: Advanced Files', icon='INFO')
         else:
@@ -211,6 +212,9 @@ class ATE_PT_project_advanced(bpy.types.Panel):
                 layout.prop(context.active_object,'ate_geometry_lod')
             layout.operator('alterego_track.export_static_geometry_test',icon='MESH_DATA')
             layout.operator('alterego_track.export_static_geometry_test',text='Export Independent Asset',icon='EXPORT').independent=True
+            layout.operator('alterego_track.place_edited_asset',icon='OBJECT_ORIGIN')
+            layout.operator('alterego_track.use_edited_asset',icon='MESH_DATA')
+            layout.operator('alterego_track.restore_original_model',icon='LOOP_BACK')
             layout.label(text='Geometry family only; no collision or track package')
 
 

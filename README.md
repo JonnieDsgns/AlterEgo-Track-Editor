@@ -44,3 +44,9 @@ Project Settings now offers the project name and Save Project. Source references
 0.2.5 adds [native collision preview/surface-code editing and explicit legacy construction tests](docs/research/collision.md). Native F1 25 collision topology generation remains unverified.
 
 0.2.6 adds [new native placements and composable Swofty layer edits](docs/research/native-insertion.md): explicit duplicates of existing static props, exported to full native copies or as launcher `patch-pkg` edits. New placements have no collision, visibility or lightmap data.
+
+0.2.7 adds Place Edited Asset: an edited native LOD family becomes a new placement exported with the normal track update (full copy or Swofty update addon). Visual only; no collision.
+
+0.2.8 adds static-prop deletion and Use Edited Asset for existing props. Deletions need whole-layer exports; PVS-listed props need an explicit opt-in.
+
+0.2.9 adds [Add Next Race Placement](docs/research/race-placements.md) for grid slots, pit boxes and garages. Database grid size and AI pit data are not changed.

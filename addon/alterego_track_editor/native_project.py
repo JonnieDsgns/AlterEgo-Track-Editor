@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import zipfile
@@ -27,6 +28,35 @@ INSERT_LIMITS = ('Visual placement only: no collision, precomputed visibility (P
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+# Numbered race placements, in the order Swofty Custom Grid Size extends them
+# (packages/core/src/activation/grid.rs): garages reference pit-garage uniqueids.
+RACE_KINDS = ('PitGarage', 'F1Garage', 'PitBox', 'GridSlot')
+RACE_NAME = re.compile(r'(.*\$)?(PitGarage|F1Garage|PitBox|GridSlot)([0-9]+)')
+
+
+def race_reason(doc, index, item):
+    """Why an instance cannot seed a new numbered grid slot/pit box/garage, or None."""
+    match = RACE_NAME.fullmatch(str(item.get('name', '')))
+    if not match:
+        return 'Not a numbered grid slot, pit box or garage'
+    overrides = item.get('overrides', {})
+    leaf = lambda *path: getattr(doc.leaves.get(('instances', index) + path), 'type', None)
+    if set(item) != CLONE_FIELDS or leaf('uniqueid') != 'woid' or leaf('overrides', 'WorldObject', 'transform') != 'mat4':
+        return 'Unexpected race placement fields'
+    if match.group(2) == 'F1Garage':
+        garage = overrides.get('F1Garage', {})
+        if item['template'] != 'F1Garage' or set(overrides) != {'F1Garage', 'WorldObject'} or \
+                set(garage) != {'id', 'left car placement', 'right car placement'} or leaf('overrides', 'F1Garage', 'id') != 'si32' or \
+                {leaf('overrides', 'F1Garage', k) for k in ('left car placement', 'right car placement')} != {'woid'}:
+            return 'Unexpected garage layout'
+    else:
+        placement = overrides.get('VehPlacement', {})
+        if item['template'] != 'VehiclePlacement' or set(overrides) != {'VehPlacement', 'WorldObject'} or \
+                set(placement) != {'Group', 'Id'} or leaf('overrides', 'VehPlacement', 'Id') != 'ui32':
+            return 'Unexpected vehicle placement layout; choose a numbered source with an explicit Id'
+    return None
 
 
 def clone_reason(doc, index, item):
@@ -137,6 +167,11 @@ class TrackDocument:
         self.unique_ids = set()
         self.layer_edits = {}
         self.inserted = []
+        self.asset_resources = []
+        self.asset_layers = set()
+        self.deleted = []
+        self._pvs_names = None
+        self._references = None
         for uri, keys in sorted(self.layer_variants.items()):
             try:
                 raw = self.catalog.read(uri)
@@ -168,6 +203,7 @@ class TrackDocument:
                         'physics': overrides.get('PhysicsTerrain',{}).get('terrain',''),
                         'editable': path in doc.leaves and doc.leaves[path].type == 'mat4',
                         'clone_reason': clone_reason(doc, index, item),
+                        'race_reason': race_reason(doc, index, item),
                         'path': path, 'layer_hash': digest(raw)})
             except (ValueError, KeyError) as exc:
                 self.warnings.append({'layer': uri, 'reason': str(exc)})
@@ -194,18 +230,25 @@ class TrackDocument:
             g.groups = [{'first': 0, 'count': count, 'slot': material, 'material': material}]
             yield f'{record["terrain"]}#{cell}:{draw_index}', g
 
-    def insert_name(self, source, identity):
-        name = f"{source['name']}_ate_{identity[:12]}"
+    def insert_name(self, source, identity, asset_name=None):
+        base = source['name'] if asset_name is None else source['name'][:source['name'].rfind('$')+1]+asset_name
+        name = f"{base}_ate_{identity[:12]}"
         if len(name.encode('utf-8')) > 255:
             raise ValueError('Generated placement name exceeds 255 bytes: '+source['name'])
         return name
 
-    def apply(self, changes, insertions=()):
-        """Plan existing matrix edits and explicit new placements; returns changed layer bytes.
+    def apply(self, changes, insertions=(), deletions=(), retargets=None, allow_pvs_deletions=False):
+        """Plan native placement edits; returns changed layer bytes.
 
-        insertions: [{'id': stable new identity, 'source': record id, 'world': 16 floats}].
+        changes: {record id: 16 floats} for moved existing placements.
+        insertions: [{'id': stable new identity, 'source': record id, 'world': 16 floats,
+        optional 'asset': {'name', 'family', 'binding', 'resources'} from static_asset.build_asset}].
+        The asset form clones the source entry but points its Model at the new family; the
+        family resources are embedded beside the edited layer by write_updated/write_patch.
+        deletions: record ids of static props to remove. retargets: {record id: asset} replaces
+        an existing static prop's model/binding with an independent family.
         """
-        plans = defaultdict(lambda: {'moves': [], 'clones': []})
+        plans = defaultdict(lambda: {'moves': [], 'clones': [], 'deletes': [], 'retargets': []})
         for identity, values in changes.items():
             r = self.by_id[identity]
             if not r['editable']:
@@ -213,30 +256,56 @@ class TrackDocument:
             if r['render_error']:
                 raise ValueError('Cannot edit unresolved render placement: '+r['name'])
             plans[r['layer']]['moves'].append((r, list(values)))
-        names, uids, inserted = set(self.names), set(self.unique_ids), []
-        for spec in sorted(insertions, key=lambda s: s['id']):
+        names, uids, inserted, assets = set(self.names), set(self.unique_ids), [], {}
+        for identity, asset in sorted((retargets or {}).items()):
+            r = self.by_id[identity]
+            if r['clone_reason'] or r['render_error']:
+                raise ValueError(f"{r['name']}: only static props can use an edited asset")
+            plans[r['layer']]['retargets'].append((r, self._asset_fields(asset, assets)))
+        deleted = []
+        for identity in sorted(deletions):
+            r = self.by_id.get(identity)
+            if r is None:
+                raise ValueError('Deleted placement is no longer in the native track')
+            reason = self.deletion_reason(r, allow_pvs_deletions)
+            if reason:
+                raise ValueError(f"Cannot delete {r['name']}: {reason}")
+            plans[r['layer']]['deletes'].append(r)
+            deleted.append({'name': r['name'], 'layer': r['layer'], 'variants': r['variants'],
+                            'pvs_listed': r['name'] in self.pvs_names()})
+        race = [s for s in insertions if s.get('race')]
+        for clone in self._race_clones(race, names, uids):
+            plans[clone['source']['layer']]['clones'].append(clone)
+            inserted.append({'name': clone['name'], 'uniqueid': clone['uniqueid'], 'source': clone['source']['name'],
+                             'layer': clone['source']['layer'], 'variants': clone['source']['variants'], 'asset': None})
+        for spec in sorted((s for s in insertions if not s.get('race')), key=lambda s: s['id']):
             source = self.by_id.get(spec['source'])
             if source is None:
                 raise ValueError('Duplicated placement source is no longer in the native track')
             if source['clone_reason'] or source['render_error']:
                 raise ValueError(f"{source['name']}: {source['clone_reason'] or source['render_error']}")
-            name = self.insert_name(source, spec['id'])
+            asset = spec.get('asset')
+            fields = {}
+            if asset:
+                fields = self._asset_fields(asset, assets)
+            name = self.insert_name(source, spec['id'], asset and asset['name'])
             uid = hashlib.md5(f"alterego-track-editor:{self.code}:{source['layer']}:{name}".encode()).digest()
             if name in names or uid in uids:
                 raise ValueError('New placement identity collides with an existing instance: '+name)
             names.add(name)
             uids.add(uid)
-            clone = {'id': spec['id'], 'source': source, 'name': name, 'uniqueid': uid.hex(), 'world': list(spec['world'])}
+            clone = {'id': spec['id'], 'source': source, 'name': name, 'uniqueid': uid.hex(),
+                     'world': list(spec['world']), 'fields': fields, 'asset': bool(asset)}
             plans[source['layer']]['clones'].append(clone)
             inserted.append({'name': name, 'uniqueid': uid.hex(), 'source': source['name'], 'layer': source['layer'],
-                             'variants': source['variants']})
+                             'variants': source['variants'], 'asset': asset['family'] if asset else None})
         replacements, edits = {}, {}
         for uri, plan in plans.items():
             original = self.layers[uri]['doc']
             tree = Tree(original.data)
             if not tree.canonical:
-                if plan['clones']:
-                    raise ValueError('Layer layout is not canonical; new placements are refused: '+uri)
+                if plan['clones'] or plan['deletes'] or plan['retargets']:
+                    raise ValueError('Layer layout is not canonical; only existing placement moves are supported: '+uri)
                 # Non-canonical sources keep the copy-on-write scalar editor and its opaque bytes.
                 for r, values in plan['moves']:
                     original.set(r['path'], values)
@@ -244,48 +313,169 @@ class TrackDocument:
                 continue
             for r, values in plan['moves']:
                 tree.set_value(r['path'], values)
+            for r, fields in plan['retargets']:
+                for path, value in fields.items():
+                    tree.set_value(('instances', r['index'])+path, value)
             for clone in plan['clones']:
                 source = clone['source']
                 tree.clone_entry(('instances',), source['index'], {('name',): clone['name'],
-                    ('uniqueid',): clone['uniqueid'], ('overrides', 'WorldObject', 'transform'): clone['world']})
+                    ('uniqueid',): clone['uniqueid'], ('overrides', 'WorldObject', 'transform'): clone['world'], **clone['fields']})
+            # Remove last so earlier indices stay valid; clones of deleted sources were copied first.
+            instances = tree.node(('instances',))
+            for r in sorted(plan['deletes'], key=lambda r: r['index'], reverse=True):
+                del instances.items[r['index']]
             data = tree.to_bytes()
             self._verify_layer(uri, data, plan)
             edits[uri] = self._patch_edits(uri, data, plan)
             replacements[uri] = data
-        self.layer_edits, self.inserted = edits, inserted
+        self.layer_edits, self.inserted, self.deleted = edits, inserted, deleted
+        self.asset_resources = [(name, source, fragments) for name, (source, fragments) in sorted(assets.items())]
+        self.asset_layers = {uri for uri, plan in plans.items() if plan['retargets'] or any(c.get('asset') for c in plan['clones'])}
         return replacements
+
+    def _race_clones(self, specs, names, uids):
+        """Number new race placements contiguously in every world that loads their layer."""
+        existing = defaultdict(dict)  # (kind, number) -> {layer: uniqueid hex}
+        for r in self.records:
+            match = RACE_NAME.fullmatch(r['name'])
+            if match:
+                uid = self.layers[r['layer']]['doc'].leaves.get(('instances', r['index'], 'uniqueid'))
+                existing[match.group(2), int(match.group(3))][r['layer']] = uid.raw.hex() if uid else None
+        def kind_of(spec):
+            source = self.by_id.get(spec['source'])
+            if source is None:
+                raise ValueError('Race placement source is no longer in the native track')
+            if source['race_reason']:
+                raise ValueError(f"{source['name']}: {source['race_reason']}")
+            return RACE_NAME.fullmatch(source['name']).group(2), source
+        ordered = sorted(specs, key=lambda s: (RACE_KINDS.index(kind_of(s)[0]), s.get('order', 0), s['id']))
+        clones = []
+        for spec in ordered:
+            kind, source = kind_of(spec)
+            layer, worlds = source['layer'], set(source['variants'])
+            if not worlds:
+                raise ValueError('Race placement layer is not loaded by any world: '+layer)
+            # Variant worlds load together with the common world (stock variants omit base garages).
+            variants_only = set(self.worlds) - {'common'}
+            if 'common' in worlds:
+                worlds = variants_only or {'common'}
+            loaded = lambda other, world: world in self.layer_variants[other] or 'common' in self.layer_variants[other]
+            visible = lambda other: all(loaded(other, w) for w in worlds)
+            def numbers(world):
+                return {n for (k, n), layers in existing.items() if k == kind and any(loaded(l, world) for l in layers)}
+            per_world = {w: numbers(w) for w in worlds}
+            number = max(max(ns, default=0) for ns in per_world.values()) + 1
+            gaps = sorted(w for w, ns in per_world.items() if ns != set(range(1, number)))
+            if gaps:
+                raise ValueError(f'{kind}{number} would leave a numbering gap in {", ".join(gaps)}; '
+                                 'add it to the variant-specific layer that holds the highest number')
+            prefix = RACE_NAME.fullmatch(source['name']).group(1) or ''
+            name = prefix + kind + str(number)
+            uid = hashlib.md5(f"alterego-track-editor:{self.code}:{layer}:{name}".encode()).digest()
+            if name in names or uid in uids:
+                raise ValueError('New race placement identity collides with an existing instance: '+name)
+            names.add(name)
+            uids.add(uid)
+            if kind == 'F1Garage':
+                cars = []
+                for n in (2 * number - 1, 2 * number):
+                    found = [u for l, u in existing.get(('PitGarage', n), {}).items() if visible(l)]
+                    if len(found) != 1:
+                        raise ValueError(f'F1Garage{number} needs exactly one PitGarage{n} loaded wherever the garage is')
+                    cars.append(found[0])
+                fields = {('overrides', 'F1Garage', 'id'): number, ('overrides', 'F1Garage', 'left car placement'): cars[0],
+                          ('overrides', 'F1Garage', 'right car placement'): cars[1]}
+            else:
+                fields = {('overrides', 'VehPlacement', 'Id'): number}
+            existing[kind, number][layer] = uid.hex()
+            clones.append({'id': spec['id'], 'source': source, 'name': name, 'uniqueid': uid.hex(),
+                           'world': list(spec['world']), 'fields': fields, 'asset': False})
+        return clones
+
+    def pvs_names(self):
+        """Instance names listed in precomputed-visibility object tables (NUL-terminated strings)."""
+        if self._pvs_names is None:
+            tables = [self.catalog.read(uri) for uri, (_, res) in self.catalog.by_uri.items() if res.type_name == 'PVSObjIDRes']
+            self._pvs_names = {name for name in self.names if any(name.encode()+b'\0' in raw for raw in tables)}
+        return self._pvs_names
+
+    def deletion_reason(self, record, allow_pvs=False):
+        if record['clone_reason'] or record['render_error']:
+            return 'only static props can be deleted'
+        if self._references is None:
+            # String/woid values outside each entry's own name and uniqueid, across every loaded layer.
+            strings, woids = set(), set()
+            for info in self.layers.values():
+                for path, leaf in info['doc'].leaves.items():
+                    if len(path) >= 3 and path[0] == 'instances' and path[2] in ('name', 'uniqueid'):
+                        continue
+                    if leaf.type == 'stri':
+                        strings.add(leaf.value)
+                    elif leaf.type == 'woid':
+                        woids.add(leaf.raw)
+            self._references = strings, woids
+        uid = self.layers[record['layer']]['doc'].leaves[('instances', record['index'], 'uniqueid')].raw
+        if record['name'] in self._references[0] or uid in self._references[1]:
+            return 'other placements reference it (for example a lightmap bake source)'
+        if not allow_pvs and record['name'] in self.pvs_names():
+            return 'it is listed in precomputed visibility data; enable the explicit PVS deletion option to proceed'
+        return None
+
+    def _asset_fields(self, asset, assets):
+        """Validate one compiled independent family and merge its resources by exact identity."""
+        model, binding = asset['family']+'?context=render', asset['binding']
+        if not model.startswith('eaid://') or not binding.startswith('eaid://') or max(len(model.encode()), len(binding.encode())) > 255:
+            raise ValueError('Asset model/binding references must be eaid strings of at most 255 bytes')
+        names = {name for name, _, _ in asset['resources']}
+        if asset['family']+'?render' not in names or asset['family']+'?model' not in names or binding not in names:
+            raise ValueError('Incomplete independent geometry resources: '+asset['family'])
+        for name, source, fragments in asset['resources']:
+            if name in self.catalog.by_uri:
+                raise ValueError('Asset resource already exists in the track: '+name)
+            if name in assets and (assets[name][0].kind != source.kind or assets[name][1] != list(fragments)):
+                raise ValueError('Two placed assets disagree on resource '+name)
+            assets[name] = (source, list(fragments))
+        return {('overrides', 'Model', 'model'): model, ('overrides', 'Model', 'mat binding'): binding}
 
     def _verify_layer(self, uri, data, plan):
         # Independent readback through the copy-on-write parser, not the tree writer.
         before = plain(self.layers[uri]['doc'].root)['instances']
         after = plain(Document(data).root)['instances']
-        moved = {r['index']: float32(values) for r, values in plan['moves']}
-        if len(after) != len(before) + len(plan['clones']):
-            raise ValueError('Inserted placement count readback failed: '+uri)
-        for index, item in enumerate(before):
-            expected = copy.deepcopy(item)
-            if index in moved:
-                expected['overrides']['WorldObject']['transform'] = moved[index]
-            if after[index] != expected:
-                raise ValueError('Existing placement changed unexpectedly: '+item.get('name', ''))
-        for clone, item in zip(plan['clones'], after[len(before):]):
-            expected = copy.deepcopy(before[clone["source"]["index"]])
-            expected.update(name=clone['name'], uniqueid=clone['uniqueid'])
-            expected['overrides']['WorldObject']['transform'] = float32(clone['world'])
-            if item != expected:
-                raise ValueError('New placement readback failed: '+clone['name'])
+        expected = copy.deepcopy(before)
+        for r, values in plan['moves']:
+            expected[r['index']]['overrides']['WorldObject']['transform'] = float32(values)
+        for r, fields in plan['retargets']:
+            for path, value in fields.items():
+                expected[r['index']][path[0]][path[1]][path[2]] = value
+        for clone in plan['clones']:
+            item = copy.deepcopy(expected[clone['source']['index']])
+            item.update(name=clone['name'], uniqueid=clone['uniqueid'])
+            item['overrides']['WorldObject']['transform'] = float32(clone['world'])
+            for path, value in clone['fields'].items():
+                item['overrides'][path[1]][path[2]] = value
+            expected.append(item)
+        removed = {r['index'] for r in plan['deletes']}
+        expected = [item for index, item in enumerate(expected) if index not in removed]
+        if len(after) != len(expected):
+            raise ValueError('Placement count readback failed: '+uri)
+        for want, got in zip(expected, after):
+            if want != got:
+                raise ValueError('Placement readback failed: '+str(want.get('name', '')))
 
     def _patch_edits(self, uri, data, plan):
         """Launcher clone-entry/set-value edits, replayed offline to the exact full-export bytes."""
         names = [i.get('name') for i in plain(self.layers[uri]['doc'].root)['instances']]
-        if len(set(names)) != len(names):
+        if plan['deletes'] or len(set(names)) != len(names):
+            return None  # The launcher has no entry-removal edit; deletions need whole layers.
+        if any(']' in r['name'] for r, _ in plan['moves']+plan['retargets']):
             return None
         edits = [{'op': 'set-value', 'path': f"instances[name={r['name']}].overrides.WorldObject.transform",
-                  'value': float32(values)} for r, values in plan['moves'] if ']' not in r['name']]
-        if len(edits) != len(plan['moves']):
-            return None
+                  'value': float32(values)} for r, values in plan['moves']]
+        edits += [{'op': 'set-value', 'path': f"instances[name={r['name']}]."+'.'.join(path), 'value': value}
+                  for r, fields in plan['retargets'] for path, value in fields.items()]
         edits += [{'op': 'clone-entry', 'at': 'instances', 'src': f"[name={c['source']['name']}]", 'as': c['name'],
-                   'set': {'uniqueid': c['uniqueid'], 'overrides.WorldObject.transform': float32(c['world'])}}
+                   'set': {'uniqueid': c['uniqueid'], 'overrides.WorldObject.transform': float32(c['world']),
+                           **{'.'.join(path): value for path, value in c['fields'].items()}}}
                   for c in plan['clones']]
         if patch_edits(Tree(self.layers[uri]['doc'].data), json.loads(json.dumps(edits))).to_bytes() != data:
             raise ValueError('Composable layer edit replay does not match the native output: '+uri)
@@ -314,6 +504,9 @@ class TrackDocument:
                 archives[candidate.path.relative_to(self.root)][uri]=data
         return archives, loose
 
+    def _loose_uris(self, replacements):
+        return [uri for uri in replacements if (uri, 0) in self.catalog.fragments]
+
     def write_updated(self, output, replacements, asset_resources=None):
         output = Path(output).expanduser().resolve()
         if any((p/'F1_25.exe').is_file() for p in (output, *output.parents)):
@@ -325,7 +518,13 @@ class TrackDocument:
         if not self.is_addon and output.suffix:
             raise ValueError('Choose a new track folder, not an archive filename')
         archives, loose = self._locations(replacements)
-        if asset_resources and (loose or not archives):raise ValueError('Geometry integration requires archived native layers')
+        if asset_resources is None:
+            # Planned new-asset placements: embed families only beside the layers that use them.
+            asset_resources, asset_layers = self.asset_resources, self.asset_layers
+        else:
+            asset_layers = set(replacements)
+        if asset_resources and (not archives or any(uri in asset_layers for uri in self._loose_uris(replacements))):
+            raise ValueError('Geometry integration requires archived native layers')
         output.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='.ate-update-', dir=output.parent) as temporary:
             stage = Path(temporary)/'track'
@@ -348,9 +547,10 @@ class TrackDocument:
                 archive = Erp(original.path)
                 for uri, data in resources.items():
                     archive.replace_fragment(uri, 0, data)
-                if asset_resources:
+                embed = asset_resources if asset_layers & set(resources) else []
+                if embed:
                     from .native.formats.erp import Resource,Fragment,STORED
-                    for name,source,fragments in asset_resources:
+                    for name,source,fragments in embed:
                         existing=[r for r in archive.resources if r.name==name]
                         if existing:
                             if len(existing)!=1 or existing[0].kind!=source.kind or len(existing[0].fragments)!=len(fragments) or any(archive.fragment_data(existing[0],i)!=raw for i,raw in enumerate(fragments)):
@@ -363,7 +563,7 @@ class TrackDocument:
                 for uri, data in resources.items():
                     if check.fragment_data(uri, 0) != data:
                         raise ValueError('Native update readback failed')
-                for name,_,fragments in asset_resources or []:
+                for name,_,fragments in embed:
                     for index,raw in enumerate(fragments):
                         if check.fragment_data(name,index)!=raw:raise ValueError('Integrated geometry resource readback failed')
             for a in self.catalog.archives:
@@ -384,6 +584,7 @@ class TrackDocument:
                 stage.rename(output)
         inserted = [i for i in self.inserted if i['layer'] in replacements]
         return {'changed_layers': len(replacements), 'game_verified': False, 'inserted_placements': inserted,
+                'deleted_placements': [d for d in self.deleted if d['layer'] in replacements],
                 'scope': 'Native WorldObject placement edits and explicit static-prop duplicates; other systems preserved',
                 'limitations': INSERT_LIMITS if inserted else ''}
 
@@ -410,7 +611,7 @@ class TrackDocument:
         if edit_format == 'patch-pkg':
             unavailable = [uri for uri in replacements if not self.layer_edits.get(uri)]
             if unavailable:
-                raise ValueError('Composable edits need canonical layers with unique names; use whole-layer replacement: '+unavailable[0])
+                raise ValueError('Composable edits need canonical layers with unique names and no deletions; use Whole Layers: '+unavailable[0])
         if self.is_addon:
             raise ValueError('Addon updates currently require complete updated-package export; changes-only targets need launcher archive resolution')
         output=Path(output).expanduser().resolve()
@@ -424,10 +625,24 @@ class TrackDocument:
         output.parent.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='.ate-patch-',dir=output.parent) as temporary:
             stage=Path(temporary)/'patch.zip'
-            ops=[];items=[]
+            ops=[];items=[];asset_archive='assets/new-assets.erp'
             with zipfile.ZipFile(stage,'w',zipfile.ZIP_DEFLATED) as z:
+                if self.asset_resources:
+                    from .static_asset import archive_bytes
+                    from .native.storage import Catalog
+                    header=self.catalog.get(sorted(self.asset_layers)[0])[0].header
+                    payload=archive_bytes(self.asset_resources,header)
+                    check_file=Path(temporary)/'new-assets.erp';check_file.write_bytes(payload)
+                    check=Catalog();check.mount(check_file)
+                    if any(check.read(name,i)!=raw for name,_,fragments in self.asset_resources for i,raw in enumerate(fragments)):
+                        raise ValueError('New asset archive readback failed')
+                    z.writestr(asset_archive,payload)
                 for rel,resources in archives.items():
                     target='2025_asset_groups/environment_package/tracks/'+self.code+'/'+rel.as_posix()
+                    if self.asset_layers & set(resources):
+                        # copy-resource adds byte-exact families and fails rather than replacing an existing name.
+                        for name,_,_ in self.asset_resources:
+                            ops.append({'op':'copy-resource','source':asset_archive,'erp':target,'resource':name})
                     for uri,data in resources.items():
                         if edit_format=='patch-pkg':
                             # Launcher composes edits inside a resource with other addons instead of replacing it.
@@ -446,6 +661,9 @@ class TrackDocument:
                 inserted=[i for i in self.inserted if i['layer'] in replacements]
                 z.writestr('provenance.json',json.dumps({'track_code':self.code,'game_verified':False,
                     'edit_format':edit_format,'changed_layers':items,'inserted_placements':inserted,
+                    'deleted_placements':[d for d in self.deleted if d['layer'] in replacements],
+                    'new_asset_resources':[name for name,_,_ in self.asset_resources],
+                    'asset_dependencies':'Native material/shader/texture dependencies stay those of the source family',
                     'source_layers':{k:v['hash'] for k,v in self.layers.items()},
                     'scope':'Placement matrices and explicit static-prop duplicates; geometry/collision/AI regeneration not included',
                     'limitations':INSERT_LIMITS if inserted else '',
