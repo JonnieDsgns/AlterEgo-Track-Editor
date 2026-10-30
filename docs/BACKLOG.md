@@ -1,5 +1,8 @@
 # Development backlog
 
+Internal0.2.5: native collision preview/surface-only export and explicit legacy collision construction tests implemented.66Python tests,4.5Beta/5.0.1 headless checks, six real native resources and independent managed-reader validation pass. Native0x20004 topology and visual terrain writing are still unfinished. See [format boundary and evidence](research/collision.md).
+
+
 Internal0.2.4: typed material/texture dependency packing and stock-folder native geometry retargeting implemented.61Python tests and4.5Beta/5.0.1 headless operator checks pass; two real material/texture bundles pass. Shared shader closure, collision/new object insertion/addon/full-track integration remain unfinished. See [exact scope](research/dependency-packing.md).
 
 

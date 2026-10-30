@@ -2,7 +2,7 @@
 bl_info = {
     "name": "AlterEgo Track Editor",
     "author": "Yannick",
-    "version": (0, 2, 4),
+    "version": (0, 2, 5),
     "blender": (4, 5, 0),
     "location": "View3D > Sidebar > AlterEgo Track Editor",
     "description": "Import AC tracks and prepare surfaces, timing, lines, rules and material sources",
@@ -13,7 +13,7 @@ import bpy
 from bpy.props import EnumProperty, StringProperty
 from .source import layouts, models
 from . import surface_ui, marker_ui, collection_ui, workspace, routes, rules, timing, materials, ui_cache, workflow, jobs, diagnostics
-from . import export_ui, export_build, project_ui, native_ui, material_library, facility_library, static_geometry_ui
+from . import export_ui, export_build, project_ui, native_ui, material_library, facility_library, static_geometry_ui, collision_ui
 
 _items = {}
 
@@ -179,11 +179,13 @@ def register():
     material_library.register()
     facility_library.register()
     static_geometry_ui.register()
+    collision_ui.register()
     bpy.types.TOPBAR_MT_file_import.append(import_menu)
 
 
 def unregister():
     jobs.reset()
+    collision_ui.unregister()
     static_geometry_ui.unregister()
     facility_library.unregister()
     material_library.unregister()

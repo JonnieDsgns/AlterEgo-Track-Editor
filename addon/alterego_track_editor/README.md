@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.4
+# AlterEgo Track Editor — internal preview 0.2.5
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -23,3 +23,5 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.2.3: Export Independent Asset writes a new folder (the chosen ERP filename without its extension) containing asset.erp and asset.json. This contains renamed LOD resources and native material bindings, with external material dependencies listed. Names may receive a deterministic suffix to keep opaque record addresses unchanged. It does not insert a world object, export collision, bundle all shaders/textures or create a track package.
 
 0.2.4: Export Independent Asset can bundle supported native materials, texture views/surfaces and external mip files. Shared native shaders remain explicit externals. Alternatively, Write a native track copy embeds edited geometry and retargets the existing selected model/context in a separate native folder copy. This retains original material dependencies, collision and race data; addon package targeting and new object insertion are unfinished. See docs/research/dependency-packing.md.
+
+0.2.5: the Collision panel loads native cells around the 3D cursor. Assign Physics Code edits selected faces (Edit mode) or selected cells (Object mode). Export Collision Surface Update writes a separate copy while retaining geometry/search data. Shared-resource edits apply to its original references; other authoring workflows are not combined. Moved/modified native geometry is rejected. Authored meshes with Collision enabled and an explicit code can export a Legacy Collision Test (.jpak, version0x20002), which is not a verified F1 25 replacement. Native0x20004 geometry generation and visual-terrain writing remain unfinished. See docs/research/collision.md.

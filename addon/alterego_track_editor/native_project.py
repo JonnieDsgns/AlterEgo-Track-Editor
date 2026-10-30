@@ -128,6 +128,7 @@ class TrackDocument:
                         'variants': sorted(keys), 'world': world if world is not None else IDENTITY[:],
                         'render': transform, 'render_error': render_error, 'model': model,
                         'terrain': terrain, 'binding': overrides.get('Model', {}).get('mat binding'),
+                        'physics': overrides.get('PhysicsTerrain',{}).get('terrain',''),
                         'editable': path in doc.leaves and doc.leaves[path].type == 'mat4',
                         'path': path, 'layer_hash': digest(raw)})
             except (ValueError, KeyError) as exc:
@@ -177,7 +178,7 @@ class TrackDocument:
             archive, _ = self.catalog.get(uri)
             if not archive.path.is_relative_to(self.root):
                 raise ValueError('Edit targets a base dependency; export a separate update instead')
-            original=self.layers[uri]['doc'].data
+            original=self.catalog.read(uri,0)
             for candidate in self.catalog.archives:
                 if not candidate.path.is_relative_to(self.root):
                     continue

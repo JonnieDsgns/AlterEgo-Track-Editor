@@ -34,5 +34,41 @@
     "source": "owner-supplied AlterEgo reference tree (read only)",
     "sha256": "fbcacd9889c87c867235f8de80bd95bf38dfb5bfa3748c64c8c0656170daa95f",
     "use": "typed primary/secondary material texture dependency contract reference"
+  },
+  {
+    "path": "Engine/FileFormats/EgoLegacyPhysicsTerrain.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "5b72068779a2c777163f8a5dfe6ef8f39c88af1bcf564cc71ea1a2ef79ec3323",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
+  },
+  {
+    "path": "Engine/FileFormats/EgoModernPhysicsTerrain.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "c9f7d49762d29b1520b47c6174ce246309373f14b1ac79a70644c96dc172b0f1",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
+  },
+  {
+    "path": "Engine/FileFormats/EgoPhysicsTerrainLeafHeader.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "e378b9060d1d20b174d7e63f97802471e46fa46c9dda3e675223ab12de678131",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
+  },
+  {
+    "path": "Engine/Services/EgoBlenderCollisionCompiler.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "2d44294ce02a64307314e51348fe4c13a395572ac0148246bff74a78a596695f",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
+  },
+  {
+    "path": "Engine/Services/EgoBlenderCollisionBindingBuilder.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "cf3ce4bfe3fe303109428569db66a6716077225f5887305a2555139efd2726cd",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
+  },
+  {
+    "path": "Engine/Services/EgoCollisionSurfaceEvidence.cs",
+    "source": "owner-supplied AlterEgo reference tree (read only)",
+    "sha256": "2fae92358eda738fba6634cac3534ebf53c2f127c409f956095675b3090a9e5d",
+    "use": "collision format/authoring boundary reference; original applications/backends not invoked"
   }
 ]

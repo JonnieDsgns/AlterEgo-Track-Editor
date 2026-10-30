@@ -20,13 +20,14 @@ class TW_PG_surface(bpy.types.PropertyGroup):
     surface: EnumProperty(name="Assigned surface", items=SURFACES,
                           default="UNASSIGNED", update=surface_changed)
     collision: BoolProperty(name="Collision", default=False, update=collision_changed,
-                            description="Include this mesh in the future collision export")
+                            description="Include this mesh in explicit authored collision test exports")
     surface_manual: BoolProperty(default=False, options={"HIDDEN"})
     collision_manual: BoolProperty(default=False, options={"HIDDEN"})
 
 
 def editable(obj):
     return (obj is not None and obj.type == "MESH" and obj.is_editable
+            and 'ate_collision_cell' not in obj
             and not obj.get("tw_is_marker") and not obj.get("tw_marker_helper")
             and not obj.get("tw_marker_source_only") and not obj.get("tw_is_route") and not obj.get("tw_route_helper")
             and not obj.get("tw_track_limit") and not obj.get("tw_pit_rule"))
