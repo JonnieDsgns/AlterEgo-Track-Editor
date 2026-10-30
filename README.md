@@ -19,6 +19,7 @@ A Blender **4.5+** add-on project for editing and creating F1 25 tracks, based o
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Development backlog](docs/BACKLOG.md)
 - [V1 acceptance checklist](docs/ACCEPTANCE.md)
+- [Game-test checklist for previews 0.2.6–0.3.1](docs/GAME_TEST_CHECKLIST.md)
 - [Agreed decisions](docs/research/decisions.md)
 - [Track Workshop baseline comparison](docs/research/baseline-comparison.md)
 - [Donor policy and category-response findings](docs/research/donor-policy.md)
