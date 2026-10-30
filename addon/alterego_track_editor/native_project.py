@@ -3,6 +3,7 @@
 Uses the bundled TrackView codecs. No engine/runtime code or installation API.
 """
 from collections import defaultdict
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -11,13 +12,41 @@ import tempfile
 import zipfile
 from .native.storage import Catalog
 from .native.formats.pkg import Document, plain
+from .native.formats.pkg_tree import Tree, patch_edits, float32
 from .native.scene import IDENTITY, render_transform
 from .native.geometry import mesh, terrain_info, triangles, combine
 from . import variants
 
+# Static visual props only: functional components (grid, garages, cameras, audio,
+# lights, triggers, physics) carry identities that a plain copy would duplicate.
+CLONE_COMPONENTS = {'Model', 'Render', 'WorldObject'}
+CLONE_FIELDS = {'name', 'overrides', 'template', 'uniqueid'}
+INSERT_LIMITS = ('Visual placement only: no collision, precomputed visibility (PVS) or lightmap '
+                 'bake data is generated; source Render fields are copied unchanged.')
+
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def clone_reason(doc, index, item):
+    """Why an existing instance cannot be duplicated, or None when it is a supported static prop."""
+    overrides = item.get('overrides', {})
+    leaf = lambda *path: doc.leaves.get(('instances', index) + path)
+    if set(item) != CLONE_FIELDS:
+        return 'Unsupported instance fields'
+    if item.get('template') != 'RenderModel':
+        return 'Only RenderModel static props can be duplicated'
+    if not isinstance(overrides, dict) or not {'Model', 'WorldObject'} <= set(overrides) or set(overrides) - CLONE_COMPONENTS:
+        return 'Functional components need typed editors before duplication'
+    if not str(overrides['Model'].get('model', '')).endswith('?context=render'):
+        return 'Model reference is not a resolved render model'
+    checks = (('uniqueid',), 'woid'), (('name',), 'stri'), (('overrides', 'WorldObject', 'transform'), 'mat4')
+    if any(getattr(leaf(*path), 'type', None) != typ for path, typ in checks):
+        return 'Unexpected native identity/transform field types'
+    if ']' in item['name']:
+        return 'Name cannot be addressed by launcher selectors'
+    return None
 
 
 class TrackDocument:
@@ -104,12 +133,20 @@ class TrackDocument:
             except (ValueError, KeyError) as exc:
                 self.warnings.append({'world': key, 'reason': str(exc)})
         self.records = []
+        self.names = set()
+        self.unique_ids = set()
+        self.layer_edits = {}
+        self.inserted = []
         for uri, keys in sorted(self.layer_variants.items()):
             try:
                 raw = self.catalog.read(uri)
                 doc = Document(raw)
                 self.layers[uri] = {'doc': doc, 'hash': digest(raw)}
                 for index, item in enumerate(plain(doc.root).get('instances', [])):
+                    self.names.add(item.get('name', ''))
+                    uid = doc.leaves.get(('instances', index, 'uniqueid'))
+                    if uid is not None:
+                        self.unique_ids.add(uid.raw)
                     overrides = item.get('overrides', {})
                     world = overrides.get('WorldObject', {}).get('transform')
                     path = ('instances', index, 'overrides', 'WorldObject', 'transform')
@@ -130,6 +167,7 @@ class TrackDocument:
                         'terrain': terrain, 'binding': overrides.get('Model', {}).get('mat binding'),
                         'physics': overrides.get('PhysicsTerrain',{}).get('terrain',''),
                         'editable': path in doc.leaves and doc.leaves[path].type == 'mat4',
+                        'clone_reason': clone_reason(doc, index, item),
                         'path': path, 'layer_hash': digest(raw)})
             except (ValueError, KeyError) as exc:
                 self.warnings.append({'layer': uri, 'reason': str(exc)})
@@ -156,15 +194,102 @@ class TrackDocument:
             g.groups = [{'first': 0, 'count': count, 'slot': material, 'material': material}]
             yield f'{record["terrain"]}#{cell}:{draw_index}', g
 
-    def apply(self, changes):
+    def insert_name(self, source, identity):
+        name = f"{source['name']}_ate_{identity[:12]}"
+        if len(name.encode('utf-8')) > 255:
+            raise ValueError('Generated placement name exceeds 255 bytes: '+source['name'])
+        return name
+
+    def apply(self, changes, insertions=()):
+        """Plan existing matrix edits and explicit new placements; returns changed layer bytes.
+
+        insertions: [{'id': stable new identity, 'source': record id, 'world': 16 floats}].
+        """
+        plans = defaultdict(lambda: {'moves': [], 'clones': []})
         for identity, values in changes.items():
             r = self.by_id[identity]
             if not r['editable']:
                 raise ValueError('Placement has no supported native WorldObject matrix: '+r['name'])
             if r['render_error']:
                 raise ValueError('Cannot edit unresolved render placement: '+r['name'])
-            self.layers[r['layer']]['doc'].set(r['path'], values)
-        return {uri: info['doc'].to_bytes() for uri, info in self.layers.items() if info['doc'].edits}
+            plans[r['layer']]['moves'].append((r, list(values)))
+        names, uids, inserted = set(self.names), set(self.unique_ids), []
+        for spec in sorted(insertions, key=lambda s: s['id']):
+            source = self.by_id.get(spec['source'])
+            if source is None:
+                raise ValueError('Duplicated placement source is no longer in the native track')
+            if source['clone_reason'] or source['render_error']:
+                raise ValueError(f"{source['name']}: {source['clone_reason'] or source['render_error']}")
+            name = self.insert_name(source, spec['id'])
+            uid = hashlib.md5(f"alterego-track-editor:{self.code}:{source['layer']}:{name}".encode()).digest()
+            if name in names or uid in uids:
+                raise ValueError('New placement identity collides with an existing instance: '+name)
+            names.add(name)
+            uids.add(uid)
+            clone = {'id': spec['id'], 'source': source, 'name': name, 'uniqueid': uid.hex(), 'world': list(spec['world'])}
+            plans[source['layer']]['clones'].append(clone)
+            inserted.append({'name': name, 'uniqueid': uid.hex(), 'source': source['name'], 'layer': source['layer'],
+                             'variants': source['variants']})
+        replacements, edits = {}, {}
+        for uri, plan in plans.items():
+            original = self.layers[uri]['doc']
+            tree = Tree(original.data)
+            if not tree.canonical:
+                if plan['clones']:
+                    raise ValueError('Layer layout is not canonical; new placements are refused: '+uri)
+                # Non-canonical sources keep the copy-on-write scalar editor and its opaque bytes.
+                for r, values in plan['moves']:
+                    original.set(r['path'], values)
+                replacements[uri], edits[uri] = original.to_bytes(), None
+                continue
+            for r, values in plan['moves']:
+                tree.set_value(r['path'], values)
+            for clone in plan['clones']:
+                source = clone['source']
+                tree.clone_entry(('instances',), source['index'], {('name',): clone['name'],
+                    ('uniqueid',): clone['uniqueid'], ('overrides', 'WorldObject', 'transform'): clone['world']})
+            data = tree.to_bytes()
+            self._verify_layer(uri, data, plan)
+            edits[uri] = self._patch_edits(uri, data, plan)
+            replacements[uri] = data
+        self.layer_edits, self.inserted = edits, inserted
+        return replacements
+
+    def _verify_layer(self, uri, data, plan):
+        # Independent readback through the copy-on-write parser, not the tree writer.
+        before = plain(self.layers[uri]['doc'].root)['instances']
+        after = plain(Document(data).root)['instances']
+        moved = {r['index']: float32(values) for r, values in plan['moves']}
+        if len(after) != len(before) + len(plan['clones']):
+            raise ValueError('Inserted placement count readback failed: '+uri)
+        for index, item in enumerate(before):
+            expected = copy.deepcopy(item)
+            if index in moved:
+                expected['overrides']['WorldObject']['transform'] = moved[index]
+            if after[index] != expected:
+                raise ValueError('Existing placement changed unexpectedly: '+item.get('name', ''))
+        for clone, item in zip(plan['clones'], after[len(before):]):
+            expected = copy.deepcopy(before[clone["source"]["index"]])
+            expected.update(name=clone['name'], uniqueid=clone['uniqueid'])
+            expected['overrides']['WorldObject']['transform'] = float32(clone['world'])
+            if item != expected:
+                raise ValueError('New placement readback failed: '+clone['name'])
+
+    def _patch_edits(self, uri, data, plan):
+        """Launcher clone-entry/set-value edits, replayed offline to the exact full-export bytes."""
+        names = [i.get('name') for i in plain(self.layers[uri]['doc'].root)['instances']]
+        if len(set(names)) != len(names):
+            return None
+        edits = [{'op': 'set-value', 'path': f"instances[name={r['name']}].overrides.WorldObject.transform",
+                  'value': float32(values)} for r, values in plan['moves'] if ']' not in r['name']]
+        if len(edits) != len(plan['moves']):
+            return None
+        edits += [{'op': 'clone-entry', 'at': 'instances', 'src': f"[name={c['source']['name']}]", 'as': c['name'],
+                   'set': {'uniqueid': c['uniqueid'], 'overrides.WorldObject.transform': float32(c['world'])}}
+                  for c in plan['clones']]
+        if patch_edits(Tree(self.layers[uri]['doc'].data), json.loads(json.dumps(edits))).to_bytes() != data:
+            raise ValueError('Composable layer edit replay does not match the native output: '+uri)
+        return edits
 
     def _locations(self, replacements):
         archives, loose = defaultdict(dict), {}
@@ -257,8 +382,10 @@ class TrackDocument:
             else:
                 # New destination only; never overwrite a source or previous export.
                 stage.rename(output)
-        return {'changed_layers': len(replacements), 'game_verified': False,
-                'scope': 'Existing native WorldObject placement edits; other systems preserved'}
+        inserted = [i for i in self.inserted if i['layer'] in replacements]
+        return {'changed_layers': len(replacements), 'game_verified': False, 'inserted_placements': inserted,
+                'scope': 'Native WorldObject placement edits and explicit static-prop duplicates; other systems preserved',
+                'limitations': INSERT_LIMITS if inserted else ''}
 
     def write_asset_update(self,identity,family,binding,resources,output):
         if self.is_addon:raise ValueError('Native geometry integration currently requires a track folder; addon archive targeting is unfinished')
@@ -276,7 +403,14 @@ class TrackDocument:
         result['collision_generated']=False
         return result
 
-    def write_patch(self, output, replacements):
+    def write_patch(self, output, replacements, edit_format='replace'):
+        """Changes-only Swofty addon: whole-layer 'replace' or composable launcher 'patch-pkg' edits."""
+        if edit_format not in ('replace', 'patch-pkg'):
+            raise ValueError('Unknown layer edit format')
+        if edit_format == 'patch-pkg':
+            unavailable = [uri for uri in replacements if not self.layer_edits.get(uri)]
+            if unavailable:
+                raise ValueError('Composable edits need canonical layers with unique names; use whole-layer replacement: '+unavailable[0])
         if self.is_addon:
             raise ValueError('Addon updates currently require complete updated-package export; changes-only targets need launcher archive resolution')
         output=Path(output).expanduser().resolve()
@@ -295,9 +429,13 @@ class TrackDocument:
                 for rel,resources in archives.items():
                     target='2025_asset_groups/environment_package/tracks/'+self.code+'/'+rel.as_posix()
                     for uri,data in resources.items():
-                        name=f'fragments/{len(items):04d}.bin'
-                        z.writestr(name,data)
-                        ops.append({'op':'replace-resource','erp':target,'resource':uri,'fragment':0,'source':name})
+                        if edit_format=='patch-pkg':
+                            # Launcher composes edits inside a resource with other addons instead of replacing it.
+                            ops.append({'op':'patch-pkg','erp':target,'resource':uri,'fragment':0,'edits':self.layer_edits[uri]})
+                        else:
+                            name=f'fragments/{len(items):04d}.bin'
+                            z.writestr(name,data)
+                            ops.append({'op':'replace-resource','erp':target,'resource':uri,'fragment':0,'source':name})
                         items.append({'erp':target,'resource':uri,'sha256':digest(data)})
                 manifest={'schema_version':1,'id':'local.alterego-track-update-'+self.code,
                     'name':self.code+' placement update','version':'0.2.0','author':'Local author',
@@ -305,9 +443,13 @@ class TrackDocument:
                     'operations':{'erp':['operations/erp.json']}}
                 z.writestr('swofty.json',json.dumps(manifest,indent=2))
                 z.writestr('operations/erp.json',json.dumps({'schema_version':1,'ops':ops},indent=2))
+                inserted=[i for i in self.inserted if i['layer'] in replacements]
                 z.writestr('provenance.json',json.dumps({'track_code':self.code,'game_verified':False,
-                    'changed_layers':items,'source_layers':{k:v['hash'] for k,v in self.layers.items()},
-                    'scope':'Existing placement matrices only; geometry/collision/AI regeneration not included'},indent=2))
+                    'edit_format':edit_format,'changed_layers':items,'inserted_placements':inserted,
+                    'source_layers':{k:v['hash'] for k,v in self.layers.items()},
+                    'scope':'Placement matrices and explicit static-prop duplicates; geometry/collision/AI regeneration not included',
+                    'limitations':INSERT_LIMITS if inserted else '',
+                    'sha256_meaning':'Expected layer bytes after these edits on the recorded source layers'},indent=2))
             with zipfile.ZipFile(stage) as z:
                 if z.testzip() is not None:raise ValueError('Patch archive validation failed')
             stage.rename(output)

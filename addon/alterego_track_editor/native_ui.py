@@ -4,10 +4,11 @@ import json
 from pathlib import Path
 import struct
 from types import SimpleNamespace
+import uuid
 import bpy
 from bpy.props import StringProperty, EnumProperty
 from mathutils import Matrix
-from . import collection_layout, marker_ui, project_ui, project_store, ui_cache, jobs, variants
+from . import collection_layout, marker_ui, project_ui, project_store, ui_cache, jobs, variants, native_project
 from .importer import ImportTransaction
 from .native_project import TrackDocument
 
@@ -178,6 +179,7 @@ def import_steps(context, source, base=''):
             obj['ate_native_world']=record['world']
             obj['ate_native_render']=record['render']
             obj['ate_native_editable']=record['editable'] and not bool(record['render_error'])
+            obj['ate_native_cloneable']=not record['clone_reason'] and not record['render_error']
             obj['ate_native_binding']=record['binding'] or ''
             obj['ate_native_surface_snapshot']=json.dumps([obj.tw_surface.surface,obj.tw_surface.collision])
             obj['ate_imported_roles']=json.dumps(sorted(c['tw_collection_role'] for c in targets))
@@ -247,8 +249,10 @@ def import_steps(context, source, base=''):
         document.close()
 
 
-def collect_changes(root, document):
+def collect_changes(root, document, insertions=None):
+    """Existing placement matrices by native id; explicit duplicates are appended to insertions."""
     bpy.context.view_layer.update()
+    insert_ids=set()
     original=json.loads(root['ate_native_identities'])
     if original != {r['id']:r['layer_hash'] for r in document.records}:
         raise ValueError('Source layers changed; reimport before exporting an update')
@@ -289,14 +293,31 @@ def collect_changes(root, document):
             if native_values(obj.matrix_basis)!=list(obj['ate_imported_pose']):
                 raise ValueError('Move the terrain parent instead of an individual preview draw: '+obj.name)
             continue
+        roles=sorted(c.get('tw_collection_role','') for c in obj.users_collection if c.get('tw_collection_owner')==root['tw_project_id'])
+        clone_of=obj.get('ate_native_clone_of')
+        if clone_of:
+            if insertions is None:
+                raise ValueError('New placements are written by Export Updated Native Track: '+obj.name)
+            source=document.by_id.get(clone_of)
+            if source is None:
+                raise ValueError('Source of this new placement is no longer in the native track: '+obj.name)
+            if obj['ate_native_insert_id'] in insert_ids:
+                raise ValueError('Copied new placements share an identity; use Duplicate as New Placement: '+obj.name)
+            insert_ids.add(obj['ate_native_insert_id'])
+            if roles!=json.loads(obj['ate_imported_roles']):
+                raise ValueError('New placements stay in their source layer and variants: '+obj.name)
+            if obj.constraints or obj.animation_data:
+                raise ValueError('Animated/constrained placement must use a validated native animation exporter')
+            native=AXES.inverted() @ obj.matrix_world @ AXES @ matrix(source['render']).inverted()
+            insertions.append({'id':obj['ate_native_insert_id'],'source':clone_of,'world':native_values(native)})
+            continue
         if not identity:
             if obj.get('ate_reference_only'):
                 continue
-            raise ValueError('New object insertion is still in development: '+obj.name)
+            raise ValueError('Only explicit native duplicates can be inserted; use Duplicate as New Placement: '+obj.name)
         if identity in objects:
-            raise ValueError('Duplicated native object requires insertion support: '+obj.name)
+            raise ValueError('Copied native object; use Duplicate as New Placement for explicit insertion: '+obj.name)
         objects[identity]=obj
-        roles=sorted(c.get('tw_collection_role','') for c in obj.users_collection if c.get('tw_collection_owner')==root['tw_project_id'])
         if roles!=json.loads(obj['ate_imported_roles']):
             raise ValueError('Moving native objects between layers/variants requires layer insertion support: '+obj.name)
         r=document.by_id[identity]
@@ -369,16 +390,65 @@ class ATE_OT_native_import_worker(jobs.CooperativeJob,bpy.types.Operator):
         self.report({'WARNING'} if warnings else {'INFO'},f'Opened {root.name}; {len(warnings)} preview warnings')
 
 
+class ATE_OT_native_duplicate(bpy.types.Operator):
+    bl_idname='alterego_track.duplicate_native_placement'
+    bl_label='Duplicate as New Placement'
+    bl_description='Add explicit new native placements sharing the selected static props\' models; visual only, no collision'
+    bl_options={'REGISTER','UNDO'}
+
+    @classmethod
+    def poll(cls,context):
+        return context.mode=='OBJECT' and marker_ui.ui_project(context) is not None and not jobs.busy(context)
+
+    def execute(self,context):
+        root=marker_ui.project(context)
+        sources=[o for o in context.selected_objects if o.get('tw_project_id')==root['tw_project_id']
+                 and (o.get('ate_native_id') or o.get('ate_native_clone_of'))]
+        refused=[o.name for o in sources if not o.get('ate_native_cloneable',True)]
+        sources=[o for o in sources if o.get('ate_native_cloneable',True)]
+        if not sources:
+            self.report({'ERROR'},'Select imported native static props (RenderModel placements)')
+            return {'CANCELLED'}
+        created=[]
+        for obj in sources:
+            new=obj.copy()  # Shares mesh/material data; geometry is not duplicated.
+            for key in ('ate_native_id','ate_imported_pose'):
+                if key in new:del new[key]
+            new['ate_native_clone_of']=obj.get('ate_native_clone_of') or obj['ate_native_id']
+            new['ate_native_insert_id']=uuid.uuid4().hex
+            new['tw_asset_id']=new['ate_native_insert_id']
+            for collection in obj.users_collection:
+                collection.objects.link(new)
+            created.append(new)
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        for obj in created:
+            obj.select_set(True)
+        context.view_layer.objects.active=created[-1]
+        ui_cache.invalidate('project')
+        message=f'Added {len(created)} new placements; move them, then export. Visual only: no collision'
+        if refused:
+            message+=f'; skipped {len(refused)} functional/unsupported objects'
+        self.report({'WARNING'} if refused else {'INFO'},message)
+        return {'FINISHED'}
+
+
 class ATE_OT_native_export(bpy.types.Operator):
     bl_idname='alterego_track.export_native_update'
     bl_label='Export Updated Native Track'
-    bl_description='Write existing placement edits to a new native track folder or updated addon; not a release-ready track generator'
+    bl_description='Write placement edits and explicit new static placements to a new native track folder or update addon; not a release-ready track generator'
     filepath:StringProperty(subtype='FILE_PATH')
     mode:EnumProperty(name='Output',items=[('FULL','Updated Native Files','Preserve the complete source structure'),('PATCH','Swofty Update Addon','Changed layers for a stock-track source')],default='FULL')
+    edit_format:EnumProperty(name='Layer edits',items=[
+        ('PKG','Composable Edits','Launcher patch-pkg set/clone edits that combine with other addons editing the same layers'),
+        ('REPLACE','Whole Layers','Replace each changed layer; conflicts with other addons replacing or editing it')],default='PKG')
 
     def draw(self,context):
         self.layout.prop(self,'mode')
-        self.layout.label(text='Placement edits only; review collision and game behaviour separately')
+        if self.mode=='PATCH':
+            self.layout.prop(self,'edit_format')
+        self.layout.label(text='Placements only; new placements have no collision')
+        self.layout.label(text='Review visibility, lighting and game behaviour separately')
 
     @classmethod
     def poll(cls,context):
@@ -397,24 +467,37 @@ class ATE_OT_native_export(bpy.types.Operator):
             if findings:
                 raise ValueError('Source files have changed or are missing; reimport before export')
             document=TrackDocument(root['ate_native_source'],root.get('ate_native_base') or None)
-            changes=collect_changes(root,document)
-            replacements=document.apply(changes)
+            insertions=[]
+            changes=collect_changes(root,document,insertions)
+            replacements=document.apply(changes,insertions)
             if self.mode=='PATCH':
-                document.write_patch(bpy.path.abspath(self.filepath),replacements)
+                fmt='patch-pkg' if self.edit_format=='PKG' else 'replace'
+                document.write_patch(bpy.path.abspath(self.filepath),replacements,fmt)
             else:
                 document.write_updated(bpy.path.abspath(self.filepath),replacements)
             root['ate_last_export']=str(Path(bpy.path.abspath(self.filepath)))
+            write_report(root,{'output':root['ate_last_export'],'mode':self.mode,'changed_layers':len(replacements),
+                'moved_placements':len(changes),'inserted_placements':document.inserted,'game_verified':False,
+                'limitations':document.inserted and native_project.INSERT_LIMITS or ''})
         except Exception as exc:
             self.report({'ERROR'},str(exc))
             return {'CANCELLED'}
         finally:
             if document:
                 document.close()
-        self.report({'INFO'},f'Exported {len(replacements)} changed native layers; game verification pending')
+        self.report({'INFO'},f'Exported {len(replacements)} changed layers, {len(insertions)} new placements; game verification pending')
         return {'FINISHED'}
 
 
-CLASSES=(ATE_OT_native_import_worker,ATE_OT_native_import,ATE_OT_native_export)
+def write_report(root,result):
+    name=root.get('ate_export_report') or root.name+' Native Export Report'
+    text=bpy.data.texts.get(name) or bpy.data.texts.new(name)
+    text.clear()
+    text.write(json.dumps(result,indent=2))
+    root['ate_export_report']=text.name
+
+
+CLASSES=(ATE_OT_native_import_worker,ATE_OT_native_import,ATE_OT_native_duplicate,ATE_OT_native_export)
 
 def register():
     for cls in CLASSES:bpy.utils.register_class(cls)

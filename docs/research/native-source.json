@@ -46,5 +46,28 @@
     "source": "TrackView 0.4.0/formats/pkg.py",
     "sha256": "ec43a8d5c1c71db6fd8479a9e77881b7b82507c7816ebdd069061daf99777277",
     "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/formats/pkg_tree.py",
+    "source": "AlterEgo Track Editor 0.2.6 implementation following SwoftyLauncher 97d44885 layout and edit semantics (no code executed from the launcher)",
+    "references": [
+      {
+        "path": "tools/pkg.py",
+        "sha256": "4ba7f4345b6ae3fa6120680f5cfaeb18148c42d3530253616df6531b33c76ca5"
+      },
+      {
+        "path": "packages/core/src/pkgedit.rs",
+        "sha256": "91a8565639081e8bc694c97413233d447f49427e713ceb87883b4a7f50af2611"
+      },
+      {
+        "path": "packages/addon-api/src/ops.rs",
+        "sha256": "37d838e8013b1e10464c13ce8d4c836c1dbc5229e57c6b0f6b01303c67e5426c"
+      },
+      {
+        "path": "docs/reference/data/textures.md",
+        "sha256": "d54f41e33d21f2c18392700fb9c6109e2fe5e9e13902370d2a9c9f51f215c568"
+      }
+    ],
+    "license": "AGPL-3.0-or-later"
   }
 ]

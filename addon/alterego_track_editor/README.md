@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.5
+# AlterEgo Track Editor — internal preview 0.2.6
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -8,7 +8,7 @@ Open F1 / Swofty Track imports a stock folder (select an ERP inside it), an addo
 
 Save Project uses ordinary .blend saving. Packed preview textures survive reopening. Keep original source files available for export. Optional source bookkeeping lives under Advanced Files.
 
-Native export supports moving, rotating and scaling supported existing placements. Full Update writes a separate stock-track folder or updated addon/package, preserving original content. Changes-only Swofty packages support stock-track sources only. Outputs must be outside source and game installation. Unsupported edits are rejected. Placement changes do not rebuild separate collision data.
+Native export supports moving, rotating and scaling supported existing placements, plus explicit new duplicates of static props (0.2.6). Full Update writes a separate stock-track folder or updated addon/package, preserving original content. Changes-only Swofty packages support stock-track sources only. Outputs must be outside source and game installation. Unsupported edits are rejected. Placement changes do not rebuild separate collision data.
 
 The material library offers thumbnail selection, local .blend pack loading, explicit curation and independent copies for objects/selected faces. Native shaders are approximated. Material edits do not yet export native materials/textures. No game-derived pack is bundled.
 
@@ -25,3 +25,5 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.2.4: Export Independent Asset can bundle supported native materials, texture views/surfaces and external mip files. Shared native shaders remain explicit externals. Alternatively, Write a native track copy embeds edited geometry and retargets the existing selected model/context in a separate native folder copy. This retains original material dependencies, collision and race data; addon package targeting and new object insertion are unfinished. See docs/research/dependency-packing.md.
 
 0.2.5: the Collision panel loads native cells around the 3D cursor. Assign Physics Code edits selected faces (Edit mode) or selected cells (Object mode). Export Collision Surface Update writes a separate copy while retaining geometry/search data. Shared-resource edits apply to its original references; other authoring workflows are not combined. Moved/modified native geometry is rejected. Authored meshes with Collision enabled and an explicit code can export a Legacy Collision Test (.jpak, version0x20002), which is not a verified F1 25 replacement. Native0x20004 geometry generation and visual-terrain writing remain unfinished. See docs/research/collision.md.
+
+0.2.6: select imported native static props and choose Duplicate as New Placement. The copy shares the source model and stays in the same layer/variants; move it, then Export Updated Native Track. Swofty Update Addon now defaults to Composable Edits (launcher patch-pkg set/clone edits that combine with other addons); Whole Layers keeps full-layer replacement. Functional objects (grid, garages, cameras, audio, lights, triggers and similar) cannot be duplicated, and plain Blender copies are rejected at export. New placements are visual only: no collision, precomputed visibility or lightmap data is generated. The export report text lists generated names/uniqueids. See docs/research/native-insertion.md.

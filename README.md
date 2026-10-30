@@ -2,7 +2,7 @@
 
 A Blender **4.5+** add-on project for editing and creating F1 25 tracks, based on Track Workshop 0.10.1, with Swofty package export.
 
-**Status: internal preview 0.2.5, not public V1.** Native F1/Swofty import, existing-object placement updates, variant visibility, material thumbnail libraries and facility references are implemented. Geometry, collision, material and race-data export remain in development. An isolated geometry test compiler now handles multiple material submeshes and complete supported LOD families, with native LOD loading and preview; [scope and tests](docs/research/static-writer.md). See [native editing scope and checks](docs/NATIVE_EDITING.md). Public V1 still targets complete, race-ready creation across all required variants and game modes.
+**Status: internal preview 0.2.6, not public V1.** Native F1/Swofty import, existing-object placement updates, explicit static-prop duplicates as new placements, variant visibility, material thumbnail libraries and facility references are implemented. Geometry, collision, material and race-data export remain in development. An isolated geometry test compiler now handles multiple material submeshes and complete supported LOD families, with native LOD loading and preview; [scope and tests](docs/research/static-writer.md). See [native editing scope and checks](docs/NATIVE_EDITING.md). Public V1 still targets complete, race-ready creation across all required variants and game modes.
 
 ## Intended workflows
 
@@ -42,3 +42,5 @@ Project Settings now offers the project name and Save Project. Source references
 0.2.4 adds [material/texture packing and native geometry copy integration](docs/research/dependency-packing.md). Native shader packages remain external; collision and full track readiness remain unfinished.
 
 0.2.5 adds [native collision preview/surface-code editing and explicit legacy construction tests](docs/research/collision.md). Native F1 25 collision topology generation remains unverified.
+
+0.2.6 adds [new native placements and composable Swofty layer edits](docs/research/native-insertion.md): explicit duplicates of existing static props, exported to full native copies or as launcher `patch-pkg` edits. New placements have no collision, visibility or lightmap data.

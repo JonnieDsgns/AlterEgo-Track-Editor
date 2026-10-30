@@ -1,5 +1,8 @@
 # Technical audit — 29 October 2026
 
+Internal 0.2.6: explicit static-prop duplication as new native placements and composable Swofty `patch-pkg` layer edits implemented. The canonical layer writer reproduces 511/511 real layers across six tracks byte-for-byte; 71 Python tests, Blender 4.5.0 Beta/5.0.1 headless checks and five real-track insertion checks pass. New placements are visual only (no collision, PVS or lightmap data). See [scope and evidence](research/native-insertion.md).
+
+
 Internal0.2.5: native collision preview/surface-only export and explicit legacy collision construction tests implemented.66Python tests,4.5Beta/5.0.1 headless checks, six real native resources and independent managed-reader validation pass. Native0x20004 topology and visual terrain writing are still unfinished. See [format boundary and evidence](research/collision.md).
 
 

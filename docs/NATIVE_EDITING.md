@@ -1,5 +1,8 @@
 # Native editing preview 0.2.0
 
+Latest 0.2.6 adds explicit static-prop duplication and composable `patch-pkg` update addons. See [insertion scope and limits](research/native-insertion.md). Changes-only export still requires stock-track sources.
+
+
 Latest0.2.2 adds complete supported static LOD/material family test export and native LOD editing collections. See [current scope](research/static-writer.md).54Python tests pass; main track updates remain placement-only.
 
 0.2.1 adds a separate [static geometry test compiler](research/static-writer.md). Main track update export retains the placement-only limits below. Current Python test total:14project tests +37baseline tests.
