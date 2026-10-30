@@ -180,3 +180,50 @@ def make_race_track(folder):
         (extra,'WOInstances',[canonical_pkg({'instances':[placement('myteam$GridSlot3','GridWheelMarker',3,16)],'layer':'vehicles_myteam'})])]
     path=folder/'wep'/(folder.name+'_common.erp');path.write_bytes(erp(resources))
     return path
+
+
+def bxml(tree):
+    """Independent fixture encoder: (name, [(key, value)], [children]) -> stock-style BXML bytes."""
+    out=bytearray(b'\x01BXML')
+    def emit(node):
+        name,attrs,children=node
+        payload=name.encode()+b'\0'+b''.join(k.encode()+b'\0'+v.encode()+b'\0' for k,v in attrs)
+        out.extend(struct.pack('<hBBh',len(payload)+4,0,0,len(attrs))+payload)
+        for child in children:emit(child)
+        out.extend(b'\x04\x00\x05\x00\x00\x00')
+    emit(tree);out.extend(b'\x04\x00\x06\x00\x00\x00'*2)
+    return bytes(out)
+
+
+def make_route_track(folder):
+    """Square 400 m main loop, open pit spline, AI gates and gameplay/audio markup."""
+    folder=Path(folder);(folder/'wep').mkdir(parents=True)
+    code=folder.name;prefix='eaid://environment_package/tracks/'+code+'/';layer=prefix+'wep/objects.layer'
+    corners=[(0,0,0),(100,0,0),(100,0,100),(0,0,100)];main=[]
+    for (ax,ay,az),(bx,by,bz) in zip(corners,corners[1:]+corners[:1]):
+        main+=[(ax+(bx-ax)*i/10,0,az+(bz-az)*i/10) for i in range(10)]
+    knot=lambda p:('Knot',[('position','%g, %g, %g'%p)],[])
+    trackspace=bxml(('rootnode',[],[('TrackSpaceSpline',[('name','maintrack')],[knot(p) for p in main]),
+        ('TrackSpaceSpline',[('name','pit_1')],[knot((x,0,-10)) for x in range(0,101,10)])]))
+    ts=bxml(('Trackspace',[('Version','ts_data_v3.002')],[('VolumeList',[('name','trackspace_0'),('type','main'),('numVolumes','0'),('closed','True')],[]),
+        ('VolumeList',[('name','trackspace_1'),('type','pit'),('numVolumes','0'),('closed','False')],[])]))
+    def markup(name,spline,start,end,types,props=()):
+        return ('MarkupElement',[('Name',name),('Start',start),('End',end),('SplineName',spline)],[('Attributes',[],
+            [('Attribute',[('Type',t)],[('Properties',[],[('Property',[('Type',k),('Value',v)],[]) for k,v in props])]) for t in types])])
+    tm=bxml(('TrackspaceMarkup',[('Version','ts_data_v3.002')],[('MarkupList',[],[markup('sector1','maintrack','0','0.3',['sector_1']),
+        markup('sector2','maintrack','0.3','0.7',['sector_2']),markup('sector3','maintrack','0.7','1',['sector_3']),
+        markup('drs_activation_1','maintrack','0.9','0.1',['drs_act'],[('ID','1')]),markup('pit_limiter_on','pit_1','0.1','0.9',['pit_lim_on']),
+        markup('audio_tunnel','maintrack','0.4','0.5',['aud_env_zone'],[('zone_name','reverb_tunnel')])])]))
+    def gate(i,p):
+        waypoints=[('waypoint',[('id',str(n)),('type',t),('length',v)],[]) for n,(t,v) in enumerate([('racing_line','0.5'),('left_track_limit','-5'),('right_track_limit','5')])]
+        return ('gate',[('id',str(i)),('name','ai_gate_track_%03d'%i)],[('position',[('x','%g'%p[0]),('y','0'),('z','%g'%p[2])],[]),
+            ('normal',[('x','0'),('y','0'),('z','1')],[]),('waypoints',[('num_waypoints','3')],waypoints)])
+    count=10
+    ai=bxml(('track',[('name','default')],[('gates',[('num_gates',str(count))],[gate(i,p) for i,p in enumerate(main[:count])]),
+        ('links',[('num_links',str(count-1))],[('link',[('id',str(i)),('from_gate',str(i)),('to_gate',str(i+1))],[]) for i in range(count-1)]),
+        ('routes',[('num_routes','1')],[('route',[('id','0'),('type','track'),('from_link','0'),('to_link',str(count-2)),('from_route','track'),('to_route','track')],[])])]))
+    resources=[(prefix+'wep/'+code+'_common.wep','World',[pkg({'layers':[layer]})]),(layer,'WOInstances',[canonical_pkg({'instances':[],'layer':'objects'})]),
+        (prefix+'ai/'+code+'_ai_track.trackspacespline','TrackSpace',[trackspace]),(prefix+'track_space_data/'+code+'_common.trackspacedata','TS',[ts]),
+        (prefix+'track_space_data/'+code+'_common.trackmarkup','TM',[tm]),(prefix+'ai/'+code+'_ai_track.aispline','AISplineData',[ai,b'TSMD'+b'\0'*116])]
+    path=folder/'wep'/(code+'_common.erp');path.write_bytes(erp(resources))
+    return path,tm

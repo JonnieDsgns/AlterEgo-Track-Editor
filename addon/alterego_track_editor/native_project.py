@@ -170,6 +170,8 @@ class TrackDocument:
         self.asset_resources = []
         self.asset_layers = set()
         self.deleted = []
+        self.resource_replacements = set()
+        self._routes = None
         self._pvs_names = None
         self._references = None
         for uri, keys in sorted(self.layer_variants.items()):
@@ -204,7 +206,7 @@ class TrackDocument:
                         'editable': path in doc.leaves and doc.leaves[path].type == 'mat4',
                         'clone_reason': clone_reason(doc, index, item),
                         'race_reason': race_reason(doc, index, item),
-                        'path': path, 'layer_hash': digest(raw)})
+                        'path': path, 'layer_hash': self.layers[uri]['hash']})
             except (ValueError, KeyError) as exc:
                 self.warnings.append({'layer': uri, 'reason': str(exc)})
         self.by_id = {r['id']: r for r in self.records}
@@ -237,7 +239,13 @@ class TrackDocument:
             raise ValueError('Generated placement name exceeds 255 bytes: '+source['name'])
         return name
 
-    def apply(self, changes, insertions=(), deletions=(), retargets=None, allow_pvs_deletions=False):
+    def routes(self):
+        if self._routes is None:
+            from .native_routes import RouteData
+            self._routes = RouteData(self.catalog, self.code)
+        return self._routes
+
+    def apply(self, changes, insertions=(), deletions=(), retargets=None, allow_pvs_deletions=False, markup=None, resources=None):
         """Plan native placement edits; returns changed layer bytes.
 
         changes: {record id: 16 floats} for moved existing placements.
@@ -246,7 +254,10 @@ class TrackDocument:
         The asset form clones the source entry but points its Model at the new family; the
         family resources are embedded beside the edited layer by write_updated/write_patch.
         deletions: record ids of static props to remove. retargets: {record id: asset} replaces
-        an existing static prop's model/binding with an independent family.
+        an existing static prop's model/binding with an independent family. markup: {track markup
+        element index: (start, end)} rewrites only those interval fractions in the TM resource.
+        resources: {uri: bytes} whole-resource replacements prepared and verified by the caller
+        (for example a rebuilt physics terrain).
         """
         plans = defaultdict(lambda: {'moves': [], 'clones': [], 'deletes': [], 'retargets': []})
         for identity, values in changes.items():
@@ -328,6 +339,17 @@ class TrackDocument:
             self._verify_layer(uri, data, plan)
             edits[uri] = self._patch_edits(uri, data, plan)
             replacements[uri] = data
+        self.resource_replacements = set()
+        if markup:
+            # Track markup is binary XML, not a !pkg layer: it is replaced whole, never patch-pkg edited.
+            uri = self.routes().uris['TM']
+            replacements[uri], edits[uri] = self.routes().write_markup(markup), None
+            self.resource_replacements.add(uri)
+        for uri, data in (resources or {}).items():
+            if uri not in self.catalog.by_uri or uri in replacements:
+                raise ValueError('Resource replacement target is missing or already edited: '+uri)
+            replacements[uri], edits[uri] = data, None
+            self.resource_replacements.add(uri)
         self.layer_edits, self.inserted, self.deleted = edits, inserted, deleted
         self.asset_resources = [(name, source, fragments) for name, (source, fragments) in sorted(assets.items())]
         self.asset_layers = {uri for uri, plan in plans.items() if plan['retargets'] or any(c.get('asset') for c in plan['clones'])}
@@ -609,7 +631,7 @@ class TrackDocument:
         if edit_format not in ('replace', 'patch-pkg'):
             raise ValueError('Unknown layer edit format')
         if edit_format == 'patch-pkg':
-            unavailable = [uri for uri in replacements if not self.layer_edits.get(uri)]
+            unavailable = [uri for uri in replacements if not self.layer_edits.get(uri) and uri not in self.resource_replacements]
             if unavailable:
                 raise ValueError('Composable edits need canonical layers with unique names and no deletions; use Whole Layers: '+unavailable[0])
         if self.is_addon:
@@ -644,7 +666,7 @@ class TrackDocument:
                         for name,_,_ in self.asset_resources:
                             ops.append({'op':'copy-resource','source':asset_archive,'erp':target,'resource':name})
                     for uri,data in resources.items():
-                        if edit_format=='patch-pkg':
+                        if edit_format=='patch-pkg' and uri not in self.resource_replacements:
                             # Launcher composes edits inside a resource with other addons instead of replacing it.
                             ops.append({'op':'patch-pkg','erp':target,'resource':uri,'fragment':0,'edits':self.layer_edits[uri]})
                         else:
@@ -663,6 +685,7 @@ class TrackDocument:
                     'edit_format':edit_format,'changed_layers':items,'inserted_placements':inserted,
                     'deleted_placements':[d for d in self.deleted if d['layer'] in replacements],
                     'new_asset_resources':[name for name,_,_ in self.asset_resources],
+                    'replaced_resources':sorted(u for u in self.resource_replacements if u in replacements),
                     'asset_dependencies':'Native material/shader/texture dependencies stay those of the source family',
                     'source_layers':{k:v['hash'] for k,v in self.layers.items()},
                     'scope':'Placement matrices and explicit static-prop duplicates; geometry/collision/AI regeneration not included',

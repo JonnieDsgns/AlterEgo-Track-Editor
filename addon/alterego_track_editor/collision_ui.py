@@ -10,6 +10,18 @@ from .native_ui import AXES,matrix,native_values
 from .physics_terrain import PhysicsTerrain,KNOWN_CODES,build_legacy
 
 CODE_ITEMS=[('UNASSIGNED','Choose native physics code','No automatic mapping from visual materials')]+[(c,c,'Explicit native physics identifier; runtime behavior is not certified here') for c in KNOWN_CODES]
+_CODE_CACHE={'keys':None,'items':CODE_ITEMS}
+
+
+def code_items(self,context):
+    """Fixed authoring codes first (stable stored indices), then printable codes found in loaded native collision."""
+    root=marker_ui.ui_project(context) if context else None
+    extra=[c for c in json.loads(root.get('ate_native_physics_codes','[]')) if c not in KNOWN_CODES and not c.startswith('HEX_')] if root else []
+    keys=tuple(extra)
+    if keys!=_CODE_CACHE['keys']:
+        _CODE_CACHE['keys']=keys
+        _CODE_CACHE['items']=[(*item,i) for i,item in enumerate(CODE_ITEMS)]+[(c,c,'Native code used by this track collision',len(CODE_ITEMS)+i) for i,c in enumerate(extra)]
+    return _CODE_CACHE['items']
 
 
 def geometry_signature(data):
@@ -92,6 +104,8 @@ def load_collision(context,root,document,record,radius,max_cells):
         group['ate_collision_uri']=uri;group['ate_collision_record']=record['id'];group['ate_collision_hash']=identity
         group['ate_collision_world']=json.dumps(record['world'])
         group['ate_collision_cells']=json.dumps(sorted(loaded));group['ate_collision_version']=parsed.version
+        known=set(json.loads(root.get('ate_native_physics_codes','[]')))|{c for cell in parsed.cells for c in cell.codes()}
+        root['ate_native_physics_codes']=json.dumps(sorted(known))
         for obj in list(context.selected_objects):obj.select_set(False)
         shown_set=set(shown)
         for obj in group.objects:obj.hide_set(obj not in shown_set)
@@ -121,6 +135,76 @@ def surface_changes(context,group,parsed):
         if codes!=parsed.cells[index].codes():changes[index]=codes
     if set(found)!=expected:raise ValueError('A loaded collision cell was removed; geometry deletion is not supported')
     return changes
+
+
+REBUILD_NOTE=('Experimental legacy 0x20002 rebuild of the whole track collision. Community Istanbul ports on Spa/Sepang '
+              'bases reported this format working when only the base track\'s own codes were used; it is not verified for '
+              'this track. Native 0x20004 search records are not reused.')
+
+
+def rebuilt_collision(context,root,document):
+    """Whole-track legacy collision: unloaded native cells, edited preview cells and authored collision meshes.
+
+    Returns (physics uri, JPAK bytes, report). Codes are restricted to those the base collision uses.
+    """
+    from .physics_terrain import build_legacy,triangle_soup,code_words
+    records=[r for r in document.records if r['physics']]
+    uris=sorted({r['physics'] for r in records})
+    if len(uris)!=1:raise ValueError('Collision rebuild needs exactly one native physics terrain; found '+str(len(uris)))
+    uri=uris[0];record=next(r for r in records if r['physics']==uri)
+    raw=native_payload(document,uri);parsed=PhysicsTerrain(raw);identity=hashlib.sha256(raw).hexdigest()
+    allowed=sorted({code for cell in parsed.cells for code in cell.codes()});words=code_words(parsed)
+    native_pose=AXES@matrix(record['world']);local=native_pose.inverted()
+    for obj in context.view_layer.objects:
+        if obj.mode=='EDIT':obj.update_from_editmode()
+    context.view_layer.update()
+    edited={};groups=[c for c in root.children if c.get('ate_collision_uri')==uri]
+    for group in groups:
+        if group.get('ate_collision_hash')!=identity:raise ValueError('Collision preview source changed; reimport before rebuilding')
+        expected=set(json.loads(group['ate_collision_cells']));found=set()
+        for obj in group.objects:
+            index=obj.get('ate_collision_cell')
+            if index not in expected or index in found or index in edited:raise ValueError('Duplicated or unexpected collision preview cell')
+            if obj.type!='MESH' or obj.modifiers or obj.data.shape_keys or obj.constraints or obj.animation_data:
+                raise ValueError('Apply modifiers/shape keys on collision previews before rebuilding: '+obj.name)
+            found.add(index);cell=parsed.cells[index]
+            native_words={tuple(p):struct.unpack_from('<I',cell.data,144+i*16+12)[0] for i,p in enumerate(cell.positions())}
+            data=obj.data;data.calc_loop_triangles();transform=local@obj.matrix_world;faces=[]
+            for triangle in data.loop_triangles:
+                material=obj.material_slots[triangle.material_index].material if triangle.material_index<len(obj.material_slots) else None
+                code=material.get('ate_physics_code') if material else None
+                if not code:raise ValueError('Every collision face needs an explicit physics material: '+obj.name)
+                points=[tuple(transform@data.vertices[i].co) for i in triangle.vertices]
+                faces.append((*points,code,tuple(native_words.get(tuple(struct.unpack('<3f',struct.pack('<3f',*p))),words.get(code,0xff808080)) for p in points)))
+            edited[index]=faces
+        if found!=expected:raise ValueError('A loaded collision cell was removed; delete faces inside it instead')
+    triangles=[]
+    for cell in parsed.cells:
+        if cell.index in edited:triangles.extend(edited[cell.index]);continue
+        triangles.extend(triangle_soup([cell]))
+    authored=0;objects=set()
+    world=matrix(record['world']).inverted()
+    for obj in root.all_objects:
+        if obj.type!='MESH' or not obj.tw_surface.collision or obj.get('ate_reference_only') or 'ate_collision_cell' in obj:continue
+        code=obj.ate_physics_code
+        if code=='UNASSIGNED':raise ValueError('Choose an explicit native physics code for '+obj.name)
+        if code not in allowed:raise ValueError(f'{obj.name}: {code} is not used by this track\'s collision; community ports lost whole chunks with foreign codes')
+        if obj.animation_data or obj.constraints:raise ValueError('Animated/constrained collision is unsupported: '+obj.name)
+        evaluated=obj.evaluated_get(context.evaluated_depsgraph_get());data=evaluated.to_mesh()
+        try:
+            data.calc_loop_triangles();transform=world@AXES.inverted()@obj.matrix_world
+            if abs(transform.determinant())<1e-10:raise ValueError('Singular authored collision transform: '+obj.name)
+            for face in data.loop_triangles:
+                points=[tuple(transform@data.vertices[i].co) for i in face.vertices]
+                if transform.determinant()<0:points[1],points[2]=points[2],points[1]
+                triangles.append((*points,code));authored+=1
+        finally:evaluated.to_mesh_clear()
+        objects.add(obj.name)
+    payload=build_legacy(triangles,codes=allowed,words=words)
+    report={'uri':uri,'native_triangles':sum(c.triangles for c in parsed.cells),'edited_cells':sorted(edited),
+        'authored_triangles':authored,'authored_objects':sorted(objects),'triangles':len(triangles),
+        'cells':len(PhysicsTerrain(payload,0x20002).cells),'codes':allowed,'version':'0x20002','note':REBUILD_NOTE,'game_verified':False}
+    return uri,payload,report
 
 
 class ATE_OT_load_collision(bpy.types.Operator):
@@ -271,17 +355,20 @@ class ATE_PT_collision(bpy.types.Panel):
                 layout.label(text='Edit: selected faces; Object: selected cells')
                 layout.operator('alterego_track.export_collision_surfaces')
                 layout.label(text='Native geometry/search data is read-only')
+        if obj and 'ate_collision_cell' in obj:
+            layout.label(text='Geometry edits apply only with the collision rebuild option')
         if obj and obj.type=='MESH' and not obj.get('ate_reference_only'):
             layout.prop(obj.tw_surface,'collision');layout.prop(obj,'ate_physics_code')
         layout.operator('alterego_track.export_legacy_collision')
-        layout.label(text='Legacy test only; native geometry writing unverified')
+        layout.label(text='Whole-track rebuild: Export Updated Native Track option')
+        layout.label(text='Experimental legacy format; not verified for this track')
 
 
 CLASSES=(ATE_OT_load_collision,ATE_OT_assign_collision_code,ATE_OT_export_collision_surfaces,ATE_OT_export_legacy_collision,ATE_PT_collision)
 def register():
     for cls in CLASSES:bpy.utils.register_class(cls)
-    bpy.types.Scene.ate_collision_code=EnumProperty(name='Native physics code',items=CODE_ITEMS,default='UNASSIGNED')
-    bpy.types.Object.ate_physics_code=EnumProperty(name='Authored physics code',items=CODE_ITEMS,default='UNASSIGNED')
+    bpy.types.Scene.ate_collision_code=EnumProperty(name='Native physics code',items=code_items,default=0)
+    bpy.types.Object.ate_physics_code=EnumProperty(name='Authored physics code',items=code_items,default=0)
 def unregister():
     del bpy.types.Object.ate_physics_code;del bpy.types.Scene.ate_collision_code
     for cls in reversed(CLASSES):bpy.utils.unregister_class(cls)

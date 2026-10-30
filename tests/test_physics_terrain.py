@@ -41,7 +41,7 @@ class PhysicsTerrainTests(unittest.TestCase):
     def test_authored_legacy_spatial_cells_palette_limits_and_no_modern_fallback(self):
         raw=build_legacy(faces(140));doc=PhysicsTerrain(raw,0x20002)
         self.assertEqual(sum(c.triangles for c in doc.cells),140)
-        self.assertTrue(all(c.triangles<=64 and len(set(c.codes()))<=8 for c in doc.cells))
+        self.assertTrue(all(c.triangles<=1000 and c.vertices<=1023 and len(set(c.codes()))<=8 for c in doc.cells))
         with self.assertRaises(ValueError):PhysicsTerrain(raw,0x20004)
         with self.assertRaises(ValueError):build_legacy([((1e8,0,0),(1e8+1,0,0),(1e8,0,1),'DEFA')])
         with self.assertRaises(ValueError):build_legacy([])
@@ -59,8 +59,11 @@ class PhysicsTerrainTests(unittest.TestCase):
         codes=['DEFA','DEFA',*KNOWN_CODES[1:7],KNOWN_CODES[6]]
         raw=bytearray(build_legacy([(*face[:3],code) for face,code in zip(source,codes)]))
         doc=PhysicsTerrain(bytes(raw));cell=doc.cells[0]
-        p=cell.offset+cell.triangle+4;raw[p]=(raw[p]&0xe3)|(7<<2)
-        doc=PhysicsTerrain(bytes(raw));self.assertEqual(doc.edit_codes({0:codes}),bytes(raw))
+        # Point one DEFA triangle at an explicit duplicate DEFA entry in the spare slot 7.
+        index=[f[3] for f in cell.faces()].index(cell.palette.index('DEFA'))
+        raw[cell.offset+80+28:cell.offset+84+28]=b'DEFA'
+        p=cell.offset+cell.triangle+4*index;raw[p]=(raw[p]&0xe3)|(7<<2)
+        doc=PhysicsTerrain(bytes(raw));codes=doc.cells[0].codes();self.assertEqual(doc.edit_codes({0:codes}),bytes(raw))
         desired=codes[:-1]+['SDT+'];out=PhysicsTerrain(doc.edit_codes({0:desired}))
         self.assertEqual(out.cells[0].codes(),desired)
         with self.assertRaises(ValueError):doc.edit_codes({0:list(KNOWN_CODES[:9])})

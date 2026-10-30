@@ -195,56 +195,169 @@ def neighbor(x,up):
     return struct.unpack('<f',struct.pack('<I',bits))[0]
 
 
-def build_legacy(faces):
-    """faces: iterable of (A,B,C,explicit four-character code). Never emits 0x20004."""
-    buckets={};count=0
-    for a,b,c,code in faces:
-        count+=1
-        if count>MAX_TRIANGLES or code not in KNOWN_CODES:raise ValueError('Collision triangle budget or native code unsupported')
+# Legacy layout limits of game-tested community builds (Istanbul ports on Spa/Sepang bases):
+# XZ chunks <=1000 triangles, <=1023 vertices, <=8 codes; per-cell quadtree with an internal
+# root, leaves of <=24 references and depth <=6; edge bits 7; unused palette slots padded with
+# codes the base track already uses; header word 0x14 = name-table offset as in stock files.
+CHUNK_TRIANGLES,CHUNK_VERTICES,LEAF_REFERENCES,LEAF_DEPTH,LEAF_MARGIN=1000,1023,24,6,0.25
+DEFAULT_WORD=0xff808080
+
+
+class _Oversized(Exception):
+    pass
+
+
+def triangle_soup(cells):
+    """Native triangles of the given cells in physics-local space: (A,B,C,code,(wordA,wordB,wordC))."""
+    for cell in cells:
+        positions=cell.positions();palette=cell.palette
+        words=[struct.unpack_from('<I',cell.data,144+i*16+12)[0] for i in range(cell.vertices)]
+        for a,b,c,slot,_ in cell.faces():
+            yield positions[a],positions[b],positions[c],palette[slot],(words[a],words[b],words[c])
+
+
+def code_words(parsed):
+    """Most common vertex word per native code, used for authored triangles of that code."""
+    counts={}
+    for cell in parsed.cells:
+        palette=cell.palette
+        for a,b,c,slot,_ in cell.faces():
+            for v in (a,b,c):
+                word=struct.unpack_from('<I',cell.data,144+v*16+12)[0];bucket=counts.setdefault(palette[slot],{})
+                bucket[word]=bucket.get(word,0)+1
+    return {code:max(bucket,key=lambda w:(bucket[w],-w)) for code,bucket in counts.items()}
+
+
+def build_legacy(faces,codes=None,words=None):
+    """faces: (A,B,C,code[,(three vertex words)]) in physics-local axes. Never emits 0x20004.
+
+    codes: allowed physical codes (the base track's own codes for a track rebuild; defaults to
+    the conservative authoring set). words: default vertex word per code.
+    """
+    allowed=list(dict.fromkeys(codes or KNOWN_CODES));allowed_set=set(allowed);words=words or {};triangles=[]
+    for face in faces:
+        a,b,c,code=face[:4]
+        if len(triangles)>=MAX_TRIANGLES:raise ValueError('Collision triangle budget exceeded')
+        if code not in allowed_set:raise ValueError(f'Physics code {code} is not used by the base track collision')
         if any(len(p)!=3 or not all(math.isfinite(v) for v in p) for p in (a,b,c)):raise ValueError('Non-finite collision geometry')
         a,b,c=[tuple(f32(v) for v in p) for p in (a,b,c)]
         u=[b[i]-a[i] for i in range(3)];v=[c[i]-a[i] for i in range(3)]
         cross=(u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0])
         if sum(x*x for x in cross)<1e-14:raise ValueError('Collision triangle collapses at native precision')
-        key=(math.floor((a[0]+b[0]+c[0])/96),math.floor((a[2]+b[2]+c[2])/96))
-        if any(not -2**31<=x<2**31 for x in key):raise ValueError('Collision coordinates exceed spatial range')
-        buckets.setdefault(key,[]).append((a,b,c,code))
-    if not count:raise ValueError('No authored collision triangles')
+        vertex_words=tuple(face[4]) if len(face)>4 else (words.get(code,DEFAULT_WORD),)*3
+        triangles.append((a,b,c,code,vertex_words))
+    if not triangles:raise ValueError('No collision triangles')
+    xs=[p[0] for t in triangles for p in t[:3]];zs=[p[2] for t in triangles for p in t[:3]]
+    size=max(max(xs)-min(xs),max(zs)-min(zs),1.0)
     cells=[]
-    for key in sorted(buckets):
-        group=[];palette=[]
-        for face in buckets[key]:
-            if group and (len(group)==64 or (face[3] not in palette and len(palette)==8)):
-                cells.append(_legacy_cell(group,palette));group=[];palette=[]
-            group.append(face)
-            if face[3] not in palette:palette.append(face[3])
-        if group:cells.append(_legacy_cell(group,palette))
+    _chunk(triangles,list(range(len(triangles))),(min(xs),min(zs),size),[],allowed,cells,0)
     if len(cells)>100000:raise ValueError('Collision cell budget exceeded')
-    out=bytearray(32+32*len(cells));out[:4]=b'JPAK';struct.pack_into('<II',out,8,len(cells),16)
+    names_offset=32+32*len(cells)
+    out=bytearray(names_offset);out[:4]=b'JPAK';struct.pack_into('<II',out,8,len(cells),16);struct.pack_into('<I',out,0x14,names_offset)
     names=[]
-    for i in range(len(cells)):names.append(len(out));out.extend(f'qt_{i:06d}.vcqtc\0'.encode())
-    for i,raw in enumerate(cells):
+    for name,_ in cells:names.append(len(out));out.extend(name.encode()+b'\0')
+    for i,(_,raw) in enumerate(cells):
         out.extend(b'\0'*(-len(out)%16));offset=len(out);out.extend(raw)
         struct.pack_into('<4I',out,32+32*i,names[i],len(raw),offset,len(raw))
     result=bytes(out);check=PhysicsTerrain(result,0x20002)
-    if sum(c.triangles for c in check.cells)!=count:raise ValueError('Legacy collision readback failed')
+    expected=sorted((t[:4] for t in triangles));actual=[]
+    for cell in check.cells:
+        positions=cell.positions();palette=cell.palette
+        for a,b,c,slot,_ in cell.faces():
+            # Cells start each triangle at its lowest vertex index; compare up to rotation.
+            tri=[positions[a],positions[b],positions[c]];k=tri.index(min(tri));actual.append((*tri[k:],*tri[:k],palette[slot]))
+    canonical=lambda t:(lambda tri,k:(*tri[k:],*tri[:k],t[3]))(list(t[:3]),list(t[:3]).index(min(t[:3])))
+    if sorted(actual)!=sorted(canonical(t) for t in expected):raise ValueError('Legacy collision geometry readback failed')
     return result
 
 
-def _legacy_cell(faces,palette):
-    n=len(faces);vertices=n*3;node=144+vertices*16;tri=node+2;refs=tri+n*4
-    raw=bytearray(refs+2+n)
-    for p,value in ((0,0x20002),(28,n),(32,vertices),(36,8),(40,144),(48,node),(56,tri),(64,refs)):struct.pack_into('<I',raw,p,value)
-    points=[]
-    for i,(a,b,c,code) in enumerate(faces):
-        for j,point in enumerate((a,b,c)):struct.pack_into('<3fI',raw,144+(i*3+j)*16,*point,0xff808080);points.append(point)
-        base=i*3;raw[tri+i*4:tri+i*4+4]=bytes([(7<<5)|(palette.index(code)<<2)|(base>>8),base&255,1,2])
+def _chunk(triangles,ids,rect,path,allowed,cells,depth):
+    codes={triangles[i][3] for i in ids}
+    if len(ids)<=CHUNK_TRIANGLES and len(codes)<=8:
+        try:
+            cells.append(('qt'+''.join('_'+p for p in path)+'.vcqtc',_legacy_cell([triangles[i] for i in ids],allowed)));return
+        except _Oversized:
+            pass
+    if depth>=24:raise ValueError('Collision is too dense to partition into legacy chunks')
+    x,z,size=rect;half=size/2;quadrants={}
+    for i in ids:
+        a,b,c=triangles[i][:3]
+        cx=(a[0]+b[0]+c[0])/3;cz=(a[2]+b[2]+c[2])/3
+        quadrants.setdefault((int(cx>=x+half),int(cz>=z+half)),[]).append(i)
+    if len(quadrants)==1 and depth>=12:
+        # Coincident centroids: split deterministically by input order instead of space.
+        middle=len(ids)//2;quadrants={(0,0):ids[:middle],(1,1):ids[middle:]}
+    for (hx,hz),members in sorted(quadrants.items()):
+        _chunk(triangles,members,(x+hx*half,z+hz*half,half),path+[f'{hx}{hz}'],allowed,cells,depth+1)
+
+
+def _legacy_cell(faces,allowed):
+    used=list(dict.fromkeys(f[3] for f in faces))
+    palette=used+[c for c in allowed if c not in used][:8-len(used)]
+    palette+=[used[0]]*(8-len(palette))
+    # Spatially ordered triangles keep vertex indices close (B/C are A plus one byte).
+    def morton(face):
+        cx=sum(p[0] for p in face[:3])/3;cz=sum(p[2] for p in face[:3])/3
+        return (round(cx,1),round(cz,1))
+    faces=sorted(faces,key=morton)
+    vertices=[];lookup={};encoded=[]
+    for a,b,c,code,vertex_words in faces:
+        index=[]
+        for point,word in zip((a,b,c),vertex_words):
+            key=(point,word);found=lookup.get(key)
+            if found is None or len(vertices)-found>200:
+                found=len(vertices);vertices.append(key);lookup[key]=found
+            index.append(found)
+        if max(index)-min(index)>255:
+            index=[];base=len(vertices)
+            for point,word in zip((a,b,c),vertex_words):vertices.append((point,word));index.append(len(vertices)-1)
+        k=index.index(min(index));index=index[k:]+index[:k]
+        encoded.append((index,palette.index(code)))
+    if len(vertices)>CHUNK_VERTICES:raise _Oversized()
+    points=[v[0] for v in vertices]
     lower=[min(f32(min(p[k] for p in points)-.001),neighbor(min(p[k] for p in points),False)) for k in range(3)]
     upper=[max(f32(max(p[k] for p in points)+.001),neighbor(max(p[k] for p in points),True)) for k in range(3)]
     if not all(map(math.isfinite,lower+upper)):raise ValueError('Collision bounds cannot be represented')
+    nodes,leaves=_legacy_tree(faces,(lower[0],lower[2],upper[0],upper[2]))
+    references=bytearray();words=[]
+    for leaf in leaves:
+        if leaf is None:words.append(0xffff);continue
+        if len(references)>0x7fff:raise _Oversized()
+        words.append(0x8000|len(references))
+        previous=leaf[0];references.extend(struct.pack('>H',previous))
+        for current in leaf[1:]:
+            while current-previous>254:previous+=254;references.append(254)  # real filler triangle references
+            references.append(current-previous);previous=current
+        references.append(255)
+    n=len(faces);node=144+len(vertices)*16;tri=node+2*len(nodes);refs=tri+n*4
+    raw=bytearray(refs+len(references))
+    for p,value in ((0,0x20002),(28,n),(32,len(vertices)),(36,8),(40,144),(48,node),(56,tri),(64,refs)):struct.pack_into('<I',raw,p,value)
     struct.pack_into('<6f',raw,4,*lower,*upper)
-    for i in range(8):raw[80+i*4:84+i*4]=(palette[i] if i<len(palette) else 'DEFA').encode()
-    struct.pack_into('>H',raw,node,0x8000)
-    for i in range(1,n):raw[refs+1+i]=1
-    raw[-1]=255
+    for i,code in enumerate(palette):raw[80+i*4:84+i*4]=code_bytes(code)
+    for i,(point,word) in enumerate(vertices):struct.pack_into('<3fI',raw,144+i*16,*point,word)
+    for i,word in enumerate(nodes):struct.pack_into('>H',raw,node+2*i,word if word<0x8000 else words[word-0x8000])
+    for i,(index,slot) in enumerate(encoded):
+        a,b,c=index
+        if a>1023:raise _Oversized()
+        raw[tri+i*4:tri+i*4+4]=bytes([(7<<5)|(slot<<2)|(a>>8),a&255,b-a,c-a])
+    raw[refs:]=references
     return bytes(raw)
+
+
+def _legacy_tree(faces,rect):
+    """Breadth-first quadtree: four consecutive children per internal node, child order
+    low-X/high-Z, high-X/high-Z, low-X/low-Z, high-X/low-Z. Returns node words (internal
+    child index, or 0x8000+leaf number) and leaf triangle lists (None = empty child)."""
+    boxes=[(min(p[0] for p in f[:3])-LEAF_MARGIN,min(p[2] for p in f[:3])-LEAF_MARGIN,
+            max(p[0] for p in f[:3])+LEAF_MARGIN,max(p[2] for p in f[:3])+LEAF_MARGIN) for f in faces]
+    nodes=[None];leaves=[];queue=[(0,rect,list(range(len(faces))),0)];head=0
+    while head<len(queue):
+        slot,(x0,z0,x1,z1),members,depth=queue[head];head+=1
+        if depth>0 and (len(members)<=LEAF_REFERENCES or depth>=LEAF_DEPTH):
+            nodes[slot]=0x8000+len(leaves);leaves.append(sorted(members) if members else None);continue
+        xm,zm=(x0+x1)/2,(z0+z1)/2;first=len(nodes);nodes[slot]=first;nodes.extend([None]*4)
+        if first>0x7fff:raise _Oversized()
+        for k,child in enumerate(((x0,zm,xm,z1),(xm,zm,x1,z1),(x0,z0,xm,zm),(xm,z0,x1,zm))):
+            inside=[i for i in members if boxes[i][0]<=child[2] and boxes[i][2]>=child[0] and boxes[i][1]<=child[3] and boxes[i][3]>=child[1]]
+            queue.append((first+k,child,inside,depth+1))
+    return nodes,leaves

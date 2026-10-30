@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.2.9
+# AlterEgo Track Editor — internal preview 0.3.1
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -33,3 +33,7 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.2.8: deleting an imported static prop is exported as removal (Updated Native Files or a Whole Layers update addon). Functional objects and props referenced by others cannot be deleted; props in precomputed visibility data require Allow deleting PVS-listed objects in the export dialog. Use Edited Asset for Selected points selected existing props at the active edited LOD family; Restore Original Model undoes it.
 
 0.2.9: select a numbered grid slot, pit box, pit garage or F1 garage (2 or higher) and choose Add Next Race Placement. Numbers and garage links are assigned at export, contiguously in every variant that loads the layer; additions that would leave a gap are refused. Database grid size, AI pit data and garage props are unchanged. See docs/research/race-placements.md.
+
+0.3.0: Native Routes and Markup > Load Native Routes shows main/pit splines and AI lines, plus editable gameplay markup intervals. Edit Start/End fractions or set them from the 3D cursor (sector boundaries stay linked; the lap start is fixed), then use Export Updated Native Track. Positions along splines are approximate; route geometry and AI timing are not edited. See docs/research/routes-markup.md.
+
+0.3.1: Export Updated Native Track > Rebuild collision (experimental legacy) replaces the track collision with a legacy-format rebuild of native collision, edited Collision previews and project meshes with Collision enabled (codes limited to those the track already uses). Community ports reported this format working; it is not verified for stock tracks. See docs/research/collision.md.

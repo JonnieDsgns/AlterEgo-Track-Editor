@@ -1,5 +1,9 @@
 # Technical audit — 29 October 2026
 
+Internal 0.3.1: experimental whole-track legacy collision rebuild (native, edited preview and authored collision; base track codes only) following the layout of two community Istanbul ports reported playable in F1 25. Builder now writes the stock name-table header word. Opening native tracks no longer re-hashes each layer per record (real Spa route session 752 s -> 22 s). Real Monaco/Spa/Bahrain rebuilds read back exactly; 88 Python tests and Blender 4.5.0 Beta/5.0.1 checks pass. Not verified in-game for any stock track. See [collision](research/collision.md).
+
+Internal 0.3.0: native routes (main/pit splines, AI racing line and limits) load as previews, and gameplay track markup intervals (sectors, DRS, ERS, X-Mode, speed trap, pit limiter, pit/start zones) can be edited and exported. New byte-exact binary XML codec verified on 1,081 resources across 28 tracks; 85 Python tests and Blender 4.5.0 Beta/5.0.1 checks pass. Route geometry and AI timing remain preview-only. See [routes and markup](research/routes-markup.md).
+
 Internal 0.2.9: Add Next Race Placement extends grid slots, pit boxes, pit garages and F1 garages with per-world contiguous numbering and garage-to-pit-garage links, following Swofty Custom Grid Size rules and real Monaco/Bahrain data. 80 Python tests and Blender 4.5.0 Beta/5.0.1 checks pass. Database grid size and AI pit data are not changed; not game-verified. See [race placements](research/race-placements.md).
 
 Internal 0.2.8: static props can be deleted (whole-layer exports; functional, referenced and, unless explicitly allowed, PVS-listed props refused) and existing props can use an edited asset (Use Edited Asset for Selected). 77 Python tests and Blender 4.5.0 Beta/5.0.1 headless checks pass; real Monaco/Spa deletions match Swofty's serializer. Not game-verified. See [insertion scope](research/native-insertion.md).

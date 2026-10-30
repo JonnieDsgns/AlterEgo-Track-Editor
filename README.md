@@ -50,3 +50,7 @@ Project Settings now offers the project name and Save Project. Source references
 0.2.8 adds static-prop deletion and Use Edited Asset for existing props. Deletions need whole-layer exports; PVS-listed props need an explicit opt-in.
 
 0.2.9 adds [Add Next Race Placement](docs/research/race-placements.md) for grid slots, pit boxes and garages. Database grid size and AI pit data are not changed.
+
+0.3.0 adds [native route previews and track markup editing](docs/research/routes-markup.md): move sectors, DRS/ERS/X-Mode zones, speed trap and pit limiter. Route geometry and AI timing are preview only.
+
+0.3.1 adds an experimental [whole-track legacy collision rebuild](docs/research/collision.md) so edited and new geometry can have collision. It follows community ports reported working in F1 25 but is not verified for stock tracks.

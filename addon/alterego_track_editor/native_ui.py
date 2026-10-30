@@ -324,6 +324,8 @@ def collect_changes(root, document, insertions=None, deletions=None, retargets=N
         if not identity:
             if obj.get('ate_reference_only'):
                 continue
+            if obj.type=='MESH' and obj.tw_surface.collision:
+                continue  # Authored collision geometry; written only by the collision rebuild.
             raise ValueError('Only explicit native duplicates can be inserted; use Duplicate as New Placement: '+obj.name)
         if identity in objects:
             raise ValueError('Copied native object; use Duplicate as New Placement for explicit insertion: '+obj.name)
@@ -497,6 +499,8 @@ class ATE_OT_native_export(bpy.types.Operator):
     bl_description='Write placement edits and explicit new static placements to a new native track folder or update addon; not a release-ready track generator'
     filepath:StringProperty(subtype='FILE_PATH')
     mode:EnumProperty(name='Output',items=[('FULL','Updated Native Files','Preserve the complete source structure'),('PATCH','Swofty Update Addon','Changed layers for a stock-track source')],default='FULL')
+    rebuild_collision:BoolProperty(name='Rebuild collision (experimental legacy)',
+        description='Replace the whole track collision with a legacy 0x20002 rebuild of native, edited preview and authored collision; reported working in community ports, not verified for this track',default=False)
     allow_pvs_deletions:BoolProperty(name='Allow deleting PVS-listed objects',
         description='Delete static props named in precomputed visibility data; in-game effect is unverified',default=False)
     edit_format:EnumProperty(name='Layer edits',items=[
@@ -508,6 +512,7 @@ class ATE_OT_native_export(bpy.types.Operator):
         if self.mode=='PATCH':
             self.layout.prop(self,'edit_format')
         self.layout.prop(self,'allow_pvs_deletions')
+        self.layout.prop(self,'rebuild_collision')
         self.layout.label(text='Placements only; new placements have no collision')
         self.layout.label(text='Review visibility, lighting and game behaviour separately')
 
@@ -532,7 +537,17 @@ class ATE_OT_native_export(bpy.types.Operator):
             changes=collect_changes(root,document,insertions,deletions,retargets)
             from .static_geometry_ui import compile_placed_assets
             assets=compile_placed_assets(context,root,document,insertions+retargets)
-            replacements=document.apply(changes,insertions,deletions,{r['id']:r['asset'] for r in retargets},self.allow_pvs_deletions)
+            from .route_ui import markup_edits
+            markup=markup_edits(root,document)
+            resources,collision=None,None
+            authored=[o.name for o in root.all_objects if o.type=='MESH' and o.tw_surface.collision and not o.get('ate_native_id')
+                      and not o.get('ate_reference_only') and 'ate_collision_cell' not in o]
+            if authored and not self.rebuild_collision:
+                raise ValueError('Authored collision meshes need the collision rebuild option: '+', '.join(authored[:3]))
+            if self.rebuild_collision:
+                from .collision_ui import rebuilt_collision
+                uri,payload,collision=rebuilt_collision(context,root,document);resources={uri:payload}
+            replacements=document.apply(changes,insertions,deletions,{r['id']:r['asset'] for r in retargets},self.allow_pvs_deletions,markup,resources)
             if self.mode=='PATCH':
                 fmt='patch-pkg' if self.edit_format=='PKG' else 'replace'
                 document.write_patch(bpy.path.abspath(self.filepath),replacements,fmt)
@@ -543,6 +558,8 @@ class ATE_OT_native_export(bpy.types.Operator):
                 'moved_placements':len(changes),'inserted_placements':document.inserted,'game_verified':False,
                 'new_assets':{a['name']:{'family':a['family'],'resources':len(a['resources'])} for a in assets.values()},
                 'deleted_placements':document.deleted,'asset_replacements':[r['id'] for r in retargets],
+                'markup_edits':{document.routes().markup[i]['name']:list(v) for i,v in markup.items()},
+                'collision_rebuild':collision,
                 'limitations':document.inserted and native_project.INSERT_LIMITS or ''})
         except Exception as exc:
             self.report({'ERROR'},str(exc))
