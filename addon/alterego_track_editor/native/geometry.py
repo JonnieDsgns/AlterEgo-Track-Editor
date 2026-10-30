@@ -136,8 +136,14 @@ def triangles(catalog, position_uri, index_uri, first, count, base, normal_uri=N
         stride,n,fmt,data=buffer(catalog,uri)
         if not all(i<n for i in ids):raise ValueError('UV index outside buffer')
         if channel==-1:
-            if (stride,fmt)!=(4,14):raise ValueError('Unsupported vertex colour format')
-            uvs[-1]=[tuple(v/255 for v in struct.unpack_from('<4B',data,i*4)) for i in ids]
+            if (stride,fmt)==(4,14):
+                uvs[-1]=[tuple(v/255 for v in struct.unpack_from('<4B',data,i*4)) for i in ids]
+            elif (stride,fmt)==(8,35):
+                # Half-float RGBA colour (seen in nine F1 25 terrain resources); clamped for preview.
+                colours=[struct.unpack_from('<4e',data,i*8) for i in ids]
+                if any(not all(map(math.isfinite,c)) for c in colours):raise ValueError('Non-finite vertex colour')
+                uvs[-1]=[tuple(min(max(v,0.),1.) for v in c) for c in colours]
+            else:raise ValueError('Unsupported vertex colour format')
             continue
         if (stride,fmt) in ((4,29),(8,35)):
             unpack='<2e';offset=pair*4

@@ -1,5 +1,8 @@
 # Native editing preview 0.2.0
 
+0.3.2: terrain previews are complete (degenerate/duplicate triangles omitted from previews only, per-draw error isolation, half-float vertex colours). Earlier imports of stock tracks were missing most of their main terrain; re-import to see it.
+
+
 Latest 0.2.6 adds explicit static-prop duplication and composable `patch-pkg` update addons. See [insertion scope and limits](research/native-insertion.md). Changes-only export still requires stock-track sources.
 
 

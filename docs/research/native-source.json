@@ -3,7 +3,8 @@
     "path": "native/geometry.py",
     "source": "TrackView 0.4.0/geometry.py",
     "sha256": "7fe5ede5eb82ceb98b4dc67334bf13df75b7669465d04793302420e871891599",
-    "license": "AGPL-3.0-or-later"
+    "license": "AGPL-3.0-or-later",
+    "modified": "0.3.2: half-float RGBA vertex colours (stride 8, format 35) decoded for previews; original hash above is the TrackView source"
   },
   {
     "path": "native/materials.py",

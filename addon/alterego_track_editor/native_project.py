@@ -226,11 +226,17 @@ class TrackDocument:
         return uri, self.geometry_cache[uri]
 
     def terrain_geometry(self, record):
+        """Yield (key, geometry) per terrain draw; a draw that cannot be decoded yields (key, ValueError)."""
         for cell, draw_index, position, ib, draw, normal, attrs, material in terrain_info(self.catalog.read(record['terrain'])):
             first, count, base, _ = draw
-            g = combine([triangles(self.catalog, position, ib, first, count, base, normal, attrs)])
+            key = f'{record["terrain"]}#{cell}:{draw_index}'
+            try:
+                g = combine([triangles(self.catalog, position, ib, first, count, base, normal, attrs)])
+            except (ValueError, KeyError) as exc:
+                yield key, ValueError(str(exc))
+                continue
             g.groups = [{'first': 0, 'count': count, 'slot': material, 'material': material}]
-            yield f'{record["terrain"]}#{cell}:{draw_index}', g
+            yield key, g
 
     def insert_name(self, source, identity, asset_name=None):
         base = source['name'] if asset_name is None else source['name'][:source['name'].rfind('$')+1]+asset_name

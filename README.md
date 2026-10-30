@@ -55,3 +55,5 @@ Project Settings now offers the project name and Save Project. Source references
 0.3.0 adds [native route previews and track markup editing](docs/research/routes-markup.md): move sectors, DRS/ERS/X-Mode zones, speed trap and pit limiter. Route geometry and AI timing are preview only.
 
 0.3.1 adds an experimental [whole-track legacy collision rebuild](docs/research/collision.md) so edited and new geometry can have collision. It follows community ports reported working in F1 25 but is not verified for stock tracks.
+
+0.3.2 fixes native terrain previews, which were missing most of the main terrain on every stock track. Re-import projects to get the complete terrain.

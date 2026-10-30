@@ -46,6 +46,24 @@ def create_mesh(key, geometry):
         raise ValueError('Non-finite native vertices cannot be previewed')
     positions = [(float(x),float(-z),float(y)) for x,y,z in pos]
     indices = np.frombuffer(geometry.indices, dtype='<u4').reshape(-1,3)
+    # Native buffers can contain degenerate or repeated triangles that Blender would repair
+    # (Spa terrain: 688 in 44 of 2,898 draws). Previews omit them; source data is untouched.
+    keep = (indices[:,0]!=indices[:,1]) & (indices[:,1]!=indices[:,2]) & (indices[:,0]!=indices[:,2])
+    seen = set()
+    for row in np.flatnonzero(keep):
+        face = tuple(sorted(indices[row].tolist()))
+        if face in seen:
+            keep[row] = False
+        seen.add(face)
+    omitted = int((~keep).sum())
+    if omitted:
+        kept_before = np.concatenate(([0], np.cumsum(keep)))
+        for group in geometry.groups or []:
+            first, last = group['first']//3, (group['first']+group['count'])//3
+            group['first'], group['count'] = 3*int(kept_before[first]), 3*int(kept_before[last]-kept_before[first])
+        indices = indices[keep]
+    if not len(indices):
+        raise ValueError('Native draw has no usable preview triangles; source preserved')
     data = bpy.data.meshes.new(key.rsplit('/',1)[-1][:60])
     data.from_pydata(positions, [], indices.tolist())
     if data.validate(clean_customdata=False):
@@ -66,6 +84,7 @@ def create_mesh(key, geometry):
         if data.loops:
             data.normals_split_custom_set([converted[loop.vertex_index] for loop in data.loops])
     data['ate_original_geometry'] = mesh_signature(data)
+    data['ate_preview_omitted_triangles'] = omitted
     return data
 
 
@@ -164,6 +183,8 @@ def import_steps(context, source, base=''):
                     mesh_groups[key]=SimpleNamespace(groups=geometry.groups or [{'first':0,'count':len(geometry.indices)//4,'slot':'Default'}],indices=b'')
                     try:
                         meshes[key] = create_mesh(key,geometry)
+                        if meshes[key]['ate_preview_omitted_triangles']:
+                            warnings.append({'name':record['name'],'reason':f"{meshes[key]['ate_preview_omitted_triangles']} degenerate/duplicate triangles omitted from preview only"})
                     except ValueError as exc:
                         meshes[key] = None
                         warnings.append({'name':record['name'],'reason':str(exc)})
@@ -192,27 +213,36 @@ def import_steps(context, source, base=''):
                 obj.empty_display_type='PLAIN_AXES'
                 obj.empty_display_size=1.0
             if record['terrain']:
+                omitted=0
                 try:
                     for key,g in document.terrain_geometry(record):
-                        from .native.terrain_materials import surface_world_uvs,bake_terrain
-                        appearance=previews.native.resolve(None,'',g.groups[0]['material'])
-                        appearance=surface_world_uvs(g,appearance)
-                        appearance=bake_terrain(previews.native,g,appearance,key,lambda:g,size=128)
-                        g.groups[0]['appearance']=appearance
-                        if key not in meshes:
-                            meshes[key]=create_mesh(key,g)
-                        child=bpy.data.objects.new('Terrain '+key.rsplit('#',1)[-1],meshes[key])
-                        for target in targets:
-                            target.objects.link(child)
-                        child.parent=obj
-                        child['ate_native_preview']=True
-                        child['tw_project_id']=root['tw_project_id']
-                        child['ate_imported_pose']=native_values(child.matrix_basis)
-                        previews.assign(child,g,None)
-                        if '#'+str(appearance.get('base','')) in appearance.get('id',''):
-                            previews.native.textures.pop(appearance.get('base'),None)
+                        # One unusable draw must not drop the remaining terrain preview.
+                        try:
+                            if isinstance(g,Exception):raise g
+                            from .native.terrain_materials import surface_world_uvs,bake_terrain
+                            appearance=previews.native.resolve(None,'',g.groups[0]['material'])
+                            appearance=surface_world_uvs(g,appearance)
+                            appearance=bake_terrain(previews.native,g,appearance,key,lambda:g,size=128)
+                            g.groups[0]['appearance']=appearance
+                            if key not in meshes:
+                                meshes[key]=create_mesh(key,g)
+                            child=bpy.data.objects.new('Terrain '+key.rsplit('#',1)[-1],meshes[key])
+                            for target in targets:
+                                target.objects.link(child)
+                            child.parent=obj
+                            child['ate_native_preview']=True
+                            child['tw_project_id']=root['tw_project_id']
+                            child['ate_imported_pose']=native_values(child.matrix_basis)
+                            previews.assign(child,g,None)
+                            if '#'+str(appearance.get('base','')) in appearance.get('id',''):
+                                previews.native.textures.pop(appearance.get('base'),None)
+                            omitted+=meshes[key].get('ate_preview_omitted_triangles',0)
+                        except (ValueError,KeyError) as exc:
+                            warnings.append({'name':record['name'],'draw':key.rsplit('#',1)[-1],'reason':str(exc)})
                 except (ValueError,KeyError) as exc:
                     warnings.append({'name':record['name'],'reason':str(exc)})
+                if omitted:
+                    warnings.append({'name':record['name'],'reason':f'{omitted} degenerate/duplicate triangles omitted from terrain preview only'})
             if index%40==0:
                 transaction.pause()
                 yield index/max(1,len(document.records)),f'Importing native objects: {index+1}/{len(document.records)}'
