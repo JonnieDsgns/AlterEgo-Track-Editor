@@ -148,10 +148,12 @@ def make_reference_track(folder):
     family='eaid://fixture/barrier'
     barrier=prop('objects$barrier_a',1,family,5);board=prop('objects$board_a',2,family,7);spare=prop('objects$spare_a',3,family,9)
     barrier['overrides']['Render']['lightmap_bake_source']='objects$board_a'
-    table=struct.pack('<III',2,40,len('objects$barrier_a'))+b'objects$barrier_a\0'+b'\0'*8
     resources=[(prefix+folder.name+'_common.wep','World',[pkg({'layers':[layer]})]),
         (layer,'WOInstances',[canonical_pkg({'instances':[barrier,board,spare],'layer':'objects'})]),
-        (family+'?render','ModelProxyRes',[render_nodes()]),(prefix+folder.name+'_f1.header.pvsbin','PVSObjIDRes',[table])]
+        (family+'?render','ModelProxyRes',[render_nodes()]),
+        (prefix+folder.name+'_f1.header.pvsbin','PVSObjIDRes',[pvs_objects(['objects$barrier_a'])]),
+        (prefix+folder.name+'_f1.volumedata.pvsbin','PVSVisRes',[pvs_cells(1,[[1],[1],[],[1],[]],[[],[],[],[],[]])]),
+        ('eaid://ego_package/lightmap_locations','LightMapLocRes',[struct.pack('<I16sIfff',1,bytes([1])*16,2,64/4096,0.25,0.5)])]
     path=folder/'wep'/(folder.name+'_common.erp');path.write_bytes(erp(resources))
     return path
 
@@ -227,3 +229,32 @@ def make_route_track(folder):
         (prefix+'track_space_data/'+code+'_common.trackmarkup','TM',[tm]),(prefix+'ai/'+code+'_ai_track.aispline','AISplineData',[ai,b'TSMD'+b'\0'*116])]
     path=folder/'wep'/(code+'_common.erp');path.write_bytes(erp(resources))
     return path,tm
+
+
+def pvs_objects(names):
+    """Stock PVSObjIDRes layout: count, then field size, length, padded name, id, value 1."""
+    out=bytearray(struct.pack('<I',len(names)))
+    for i,name in enumerate(names):
+        raw=name.encode();size=(len(raw)+1+3)&~3
+        out+=struct.pack('<II',size,len(raw))+raw.ljust(size,b'\0')+struct.pack('<II',i+1,1)
+    return bytes(out)
+
+
+def pvs_cells(objects,*cell_bits):
+    """PVSD v5 with absolute cells; each cell lists set bit numbers per stream (one-byte runs)."""
+    bits=((objects+1+31)//32)*32+1024;size=(bits+7)//8;table=bytearray();body=bytearray()
+    for n,streams in enumerate(cell_bits):
+        raws=[]
+        for setbits in streams:
+            data=bytearray(size)
+            for b in setbits:data[b>>3]|=1<<(b&7)
+            raws.append(b''.join(bytes([1<<3]) if v==0 else bytes([1,v]) for v in data)+b'\0')
+        cuts=[];pos=0
+        for r in raws[:-1]:pos+=len(r);cuts.append(pos)
+        table+=struct.pack('<IIhhhH4H',len(body),0,n*4,n*4,0,0,*cuts)+bytes(8);body+=b''.join(raws)
+    spheres=b''.join(struct.pack('<4f',0,0,0,1) for _ in range(objects+1))
+    header=bytearray(72);header[:4]=b'PVSD';struct.pack_into('<I',header,4,5);struct.pack_into('<I',header,16,objects+1)
+    struct.pack_into('<I',header,36,bits);struct.pack_into('<II',header,52,len(cell_bits),0);struct.pack_into('<HH',header,60,0,0)
+    struct.pack_into('<I',header,64,len(body));rest=bytes(40)+bytes(table)+bytes(body)+spheres
+    struct.pack_into('<I',header,20,len(rest))
+    return bytes(header)+rest

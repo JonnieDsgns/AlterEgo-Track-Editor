@@ -529,6 +529,8 @@ class ATE_OT_native_export(bpy.types.Operator):
     bl_description='Write placement edits and explicit new static placements to a new native track folder or update addon; not a release-ready track generator'
     filepath:StringProperty(subtype='FILE_PATH')
     mode:EnumProperty(name='Output',items=[('FULL','Updated Native Files','Preserve the complete source structure'),('PATCH','Swofty Update Addon','Changed layers for a stock-track source')],default='FULL')
+    derived_entries:BoolProperty(name='Visibility and lighting for new placements',
+        description='Copy each source object precomputed-visibility bits and share its baked-lighting rectangle; off leaves new placements without them',default=True)
     rebuild_collision:BoolProperty(name='Rebuild collision (experimental legacy)',
         description='Replace the whole track collision with a legacy 0x20002 rebuild of native, edited preview and authored collision; reported working in community ports, not verified for this track',default=False)
     allow_pvs_deletions:BoolProperty(name='Allow deleting PVS-listed objects',
@@ -542,6 +544,7 @@ class ATE_OT_native_export(bpy.types.Operator):
         if self.mode=='PATCH':
             self.layout.prop(self,'edit_format')
         self.layout.prop(self,'allow_pvs_deletions')
+        self.layout.prop(self,'derived_entries')
         self.layout.prop(self,'rebuild_collision')
         self.layout.label(text='Placements only; new placements have no collision')
         self.layout.label(text='Review visibility, lighting and game behaviour separately')
@@ -577,7 +580,13 @@ class ATE_OT_native_export(bpy.types.Operator):
             if self.rebuild_collision:
                 from .collision_ui import rebuilt_collision
                 uri,payload,collision=rebuilt_collision(context,root,document);resources={uri:payload}
-            replacements=document.apply(changes,insertions,deletions,{r['id']:r['asset'] for r in retargets},self.allow_pvs_deletions,markup,resources)
+            replacements=document.apply(changes,insertions,deletions,{r['id']:r['asset'] for r in retargets},self.allow_pvs_deletions,markup,resources,
+                                        self.derived_entries)
+            zone_warnings=[]
+            if markup:
+                from .native_routes import zone_warnings as check_zones
+                rows=[dict(r,start=markup[r['index']][0],end=markup[r['index']][1]) if r['index'] in markup else r for r in document.routes().markup]
+                zone_warnings=check_zones(rows,document.routes().splines)
             if self.mode=='PATCH':
                 fmt='patch-pkg' if self.edit_format=='PKG' else 'replace'
                 document.write_patch(bpy.path.abspath(self.filepath),replacements,fmt)
@@ -589,7 +598,7 @@ class ATE_OT_native_export(bpy.types.Operator):
                 'new_assets':{a['name']:{'family':a['family'],'resources':len(a['resources'])} for a in assets.values()},
                 'deleted_placements':document.deleted,'asset_replacements':[r['id'] for r in retargets],
                 'markup_edits':{document.routes().markup[i]['name']:list(v) for i,v in markup.items()},
-                'collision_rebuild':collision,
+                'collision_rebuild':collision,'markup_warnings':zone_warnings,'new_placement_entries':document.derived,
                 'limitations':document.inserted and native_project.INSERT_LIMITS or ''})
         except Exception as exc:
             self.report({'ERROR'},str(exc))
@@ -597,7 +606,10 @@ class ATE_OT_native_export(bpy.types.Operator):
         finally:
             if document:
                 document.close()
-        self.report({'INFO'},f'Exported {len(replacements)} changed layers, {len(insertions)} new, {len(deletions)} deleted placements; game verification pending')
+        if zone_warnings:
+            self.report({'WARNING'},f'Exported; {len(zone_warnings)} DRS/Straight Mode zones are outside stock ranges (see export report)')
+        else:
+            self.report({'INFO'},f'Exported {len(replacements)} changed resources, {len(insertions)} new, {len(deletions)} deleted placements; game verification pending')
         return {'FINISHED'}
 
 

@@ -9,3 +9,4 @@ The project is distributed under AGPL-3.0-or-later; see LICENSE. Component notic
 - Simplified Track Manager, F1 Track Cameras and EgoEngineLibrary were reviewed as references; review component notices before further code integration.
 
 Source licenses do not grant redistribution rights to game textures, models, sounds, proprietary shaders or third-party tracks. No such assets are included. Public template packs require separate asset provenance and permissions.
+- PVS (`native/formats/pvs.py`) and lightmap-location (`native/formats/lightmaps.py`) layouts were first described by the GPL-3.0-only F1MapEditor toolkit (github.com/sticktor/F1MapEditor, commit 0c244b5). No code was copied; the formats were reimplemented and checked against stock files, which corrected its bit-to-object assumption.

@@ -126,7 +126,8 @@ class TrackDocument:
             if not (self.root/'wep').is_dir():
                 raise ValueError('Choose a native track folder containing wep, or a Swofty addon')
             common = self.root/'wep'/(self.root.name+'_common.erp')
-            paths = [common] + sorted((self.root/'wep').glob('*.erp')) + sorted(self.root.glob('*.erp'))
+            # bake/ holds lightmap locations keyed by instance uniqueid (edited for new placements).
+            paths = [common] + sorted((self.root/'wep').glob('*.erp')) + sorted(self.root.glob('*.erp')) + sorted((self.root/'bake').glob('*.erp'))
             for p in dict.fromkeys(paths):
                 if p.is_file():
                     self.catalog.mount(p)
@@ -171,6 +172,7 @@ class TrackDocument:
         self.asset_layers = set()
         self.deleted = []
         self.resource_replacements = set()
+        self.derived = {}
         self._routes = None
         self._pvs_names = None
         self._references = None
@@ -251,7 +253,8 @@ class TrackDocument:
             self._routes = RouteData(self.catalog, self.code)
         return self._routes
 
-    def apply(self, changes, insertions=(), deletions=(), retargets=None, allow_pvs_deletions=False, markup=None, resources=None):
+    def apply(self, changes, insertions=(), deletions=(), retargets=None, allow_pvs_deletions=False, markup=None, resources=None,
+              derived=True):
         """Plan native placement edits; returns changed layer bytes.
 
         changes: {record id: 16 floats} for moved existing placements.
@@ -263,7 +266,8 @@ class TrackDocument:
         an existing static prop's model/binding with an independent family. markup: {track markup
         element index: (start, end)} rewrites only those interval fractions in the TM resource.
         resources: {uri: bytes} whole-resource replacements prepared and verified by the caller
-        (for example a rebuilt physics terrain).
+        (for example a rebuilt physics terrain). derived: give new placements the precomputed
+        visibility and baked-lighting entries of their source objects.
         """
         plans = defaultdict(lambda: {'moves': [], 'clones': [], 'deletes': [], 'retargets': []})
         for identity, values in changes.items():
@@ -351,6 +355,8 @@ class TrackDocument:
             uri = self.routes().uris['TM']
             replacements[uri], edits[uri] = self.routes().write_markup(markup), None
             self.resource_replacements.add(uri)
+        clones = [c for plan in plans.values() for c in plan['clones']]
+        self.derived = self._derived(clones, replacements, edits) if derived and clones else {}
         for uri, data in (resources or {}).items():
             if uri not in self.catalog.by_uri or uri in replacements:
                 raise ValueError('Resource replacement target is missing or already edited: '+uri)
@@ -419,6 +425,45 @@ class TrackDocument:
             clones.append({'id': spec['id'], 'source': source, 'name': name, 'uniqueid': uid.hex(),
                            'world': list(spec['world']), 'fields': fields, 'asset': False})
         return clones
+
+    def _derived(self, clones, replacements, edits):
+        """New placements copy their source's PVS bits and share its lightmap rectangle."""
+        from .native.formats import pvs, lightmaps
+        report = {'visibility': [], 'lighting': []}
+        prefix = f'/tracks/{self.code}/'
+        for uri, (_, resource) in sorted(self.catalog.by_uri.items()):
+            if resource.type_name != 'PVSObjIDRes' or prefix not in uri:
+                continue
+            vis_uri = uri.replace('.header.pvsbin', '.volumedata.pvsbin')
+            if vis_uri == uri or vis_uri not in self.catalog.by_uri:
+                raise ValueError('Visibility object list without matching cell data: '+uri)
+            rows = pvs.read_objects(self.catalog.read(uri))
+            if [r[1] for r in rows] != list(range(1, len(rows) + 1)):
+                raise ValueError('Visibility object ids are not contiguous; new placements cannot be added: '+uri)
+            ids = {r[0]: r[1] for r in rows}
+            added = [(c['name'], ids[c['source']['name']]) for c in clones if c['source']['name'] in ids]
+            if not added:
+                continue
+            vis = pvs.Visibility(self.catalog.read(vis_uri))
+            replacements[vis_uri] = vis.with_objects(len(rows), [source for _, source in added])
+            replacements[uri] = pvs.write_objects(rows + [(name, len(rows) + 1 + n, 1, 0) for n, (name, _) in enumerate(added)])
+            for target in (uri, vis_uri):
+                edits[target] = None
+                self.resource_replacements.add(target)
+            report['visibility'].append({'resource': uri, 'added': len(added), 'cells': len(vis.cells)})
+        pairs = [(bytes.fromhex(self._uid(c['source'])), bytes.fromhex(c['uniqueid'])) for c in clones]
+        for uri, (_, resource) in sorted(self.catalog.by_uri.items()):
+            if resource.type_name != 'LightMapLocRes':
+                continue
+            data, count = lightmaps.share(self.catalog.read(uri), pairs)
+            if count:
+                replacements[uri], edits[uri] = data, None
+                self.resource_replacements.add(uri)
+                report['lighting'].append({'resource': uri, 'added': count})
+        return report
+
+    def _uid(self, record):
+        return self.layers[record['layer']]['doc'].leaves[('instances', record['index'], 'uniqueid')].raw.hex()
 
     def pvs_names(self):
         """Instance names listed in precomputed-visibility object tables (NUL-terminated strings)."""

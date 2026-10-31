@@ -57,3 +57,5 @@ Project Settings now offers the project name and Save Project. Source references
 0.3.1 adds an experimental [whole-track legacy collision rebuild](docs/research/collision.md) so edited and new geometry can have collision. It follows community ports reported working in F1 25 but is not verified for stock tracks.
 
 0.3.2 fixes native terrain previews, which were missing most of the main terrain on every stock track. Re-import projects to get the complete terrain.
+
+0.3.3 gives new placements [visibility and baked-lighting entries](docs/research/visibility-lighting.md) copied from their source, and warns about DRS/Straight Mode zones outside stock ranges.

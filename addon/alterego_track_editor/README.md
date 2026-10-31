@@ -1,4 +1,4 @@
-# AlterEgo Track Editor — internal preview 0.3.2
+# AlterEgo Track Editor — internal preview 0.3.3
 
 Blender 4.5 minimum. Disable Track Workshop before enabling this add-on: retained operators and properties cannot register alongside the original.
 
@@ -39,3 +39,5 @@ This is not V1. New geometry, terrain, collision, native material export, facili
 0.3.1: Export Updated Native Track > Rebuild collision (experimental legacy) replaces the track collision with a legacy-format rebuild of native collision, edited Collision previews and project meshes with Collision enabled (codes limited to those the track already uses). Community ports reported this format working; it is not verified for stock tracks. See docs/research/collision.md.
 
 0.3.2: terrain previews no longer stop at the first draw containing degenerate or duplicate triangles (those triangles are omitted from the preview and reported), and half-float vertex colours are decoded. Re-import native tracks imported with earlier versions to see the complete terrain; preview meshes are never exported.
+
+0.3.3: Export Updated Native Track adds visibility (PVS) and baked-lighting entries for new placements, copied from their source objects (option on by default). Edited DRS and Straight Mode zones outside the ranges of stock tracks produce warnings in the export report.

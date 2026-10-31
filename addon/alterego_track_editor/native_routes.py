@@ -205,3 +205,62 @@ class RouteData:
                 same(x, y)
 
         same(old, new)
+
+
+# Stock envelope (28 installed tracks), widened slightly: DRS activation 338-1039 m, detection
+# 108-1938 m before it, X-Mode 155-1748 m.
+DRS_ACTIVATION, DRS_GAP, X_MODE = (300, 1100), (50, 2000), (150, 1800)
+
+
+def interval_metres(spline, start, end):
+    """Length of an interval along a spline; start > end wraps through the lap line."""
+    span = end - start if end >= start else 1.0 - start + end
+    return span * spline.length
+
+
+def zone_warnings(rows, splines):
+    """Warnings for DRS and Straight Mode (X-Mode) zones outside the envelope of the 28 stock tracks.
+
+    Measured stock ranges (docs/research/routes-markup.md): DRS activation 338-1039 m, detection
+    108-1938 m before activation, X-Mode zones 155-1748 m; activation zones of different IDs and
+    Full X-Mode zones never overlap. The F1MapEditor catalogue ranges (300-1000, 50-600, 180-1750)
+    flag 18 stock zones, so they are not used. Warnings only: the game's limits are not known.
+    """
+    main = splines.get('maintrack')
+    if main is None:
+        return []
+    def zones(kind):
+        return [r for r in rows if kind in r['types'] and r['spline'] == 'maintrack']
+    def overlap(a, b):
+        def parts(r):
+            return [(r['start'], r['end'])] if r['end'] >= r['start'] else [(r['start'], 1.0), (0.0, r['end'])]
+        return any(x0 < y1 and y0 < x1 for x0, x1 in parts(a) for y0, y1 in parts(b))
+    warnings = []
+    detections = {r['props'].get('drs_det.ID'): r for r in zones('drs_det')}
+    activations = zones('drs_act')
+    for act in activations:
+        length = interval_metres(main, act['start'], act['end'])
+        if not DRS_ACTIVATION[0] <= length <= DRS_ACTIVATION[1]:
+            warnings.append(f"{act['name']}: DRS activation {length:.0f} m (stock {DRS_ACTIVATION[0]}-{DRS_ACTIVATION[1]} m)")
+        det = detections.get(act['props'].get('drs_act.ID'))
+        if det is None:
+            warnings.append(f"{act['name']}: no DRS detection with the same ID")
+        else:
+            gap = interval_metres(main, det['end'], act['start'])
+            if not DRS_GAP[0] <= gap <= DRS_GAP[1]:
+                warnings.append(f"{act['name']}: detection {gap:.0f} m before activation (stock {DRS_GAP[0]}-{DRS_GAP[1]} m)")
+    for i, a in enumerate(activations):
+        for b in activations[i + 1:]:
+            if overlap(a, b):
+                warnings.append(f"{a['name']} overlaps {b['name']}")
+    modes = zones('x_mode')
+    for zone in modes:
+        length = interval_metres(main, zone['start'], zone['end'])
+        if not X_MODE[0] <= length <= X_MODE[1]:
+            warnings.append(f"{zone['name']}: Straight Mode zone {length:.0f} m (stock {X_MODE[0]}-{X_MODE[1]} m)")
+    full = [z for z in modes if z['props'].get('x_mode.type') == 'Full']
+    for i, a in enumerate(full):
+        for b in full[i + 1:]:
+            if overlap(a, b):
+                warnings.append(f"{a['name']} overlaps {b['name']}")
+    return warnings

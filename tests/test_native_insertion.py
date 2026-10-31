@@ -139,3 +139,28 @@ class NativeDeletionTests(unittest.TestCase):
             grid=next(r for r in doc.records if r['name']=='objects$GridSlot1')
             with self.assertRaisesRegex(ValueError,'only static props'):doc.apply({},deletions=[grid['id']])
             doc.close()
+
+
+class DerivedVisibilityLightingTests(unittest.TestCase):
+    def test_new_placement_copies_source_visibility_and_lightmap(self):
+        from native_fixtures import make_reference_track
+        from alterego_track_editor.native.formats import pvs,lightmaps
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);make_reference_track(root/'track');doc=TrackDocument(root/'track')
+            barrier=next(r for r in doc.records if r['name']=='objects$barrier_a');spare=next(r for r in doc.records if r['name']=='objects$spare_a')
+            replacements=doc.apply({},[{'id':'a1'*16,'source':barrier['id'],'world':moved(30)},{'id':'b2'*16,'source':spare['id'],'world':moved(40)}])
+            header=next(u for u in replacements if u.endswith('.header.pvsbin'));vis=header.replace('.header','.volumedata')
+            rows=pvs.read_objects(replacements[header])
+            self.assertEqual([(r[0],r[1],r[2]) for r in rows],[('objects$barrier_a',1,1),('objects$barrier_a_ate_'+'a1'*6,2,1)])
+            cells=pvs.Visibility(replacements[vis])
+            for k,expected in enumerate([[1,1,0,1,0],[0,0,0,0,0]]):
+                self.assertEqual([s[0]>>2&1 for s in cells.sets(k)],expected)  # bit 2 = new id 2 copies bit 1
+                self.assertEqual([s[0]>>1&1 for s in cells.sets(k)],expected)
+            self.assertEqual(cells.bits,pvs.bit_count(2));self.assertEqual(cells.objects,2)  # no sphere for the new id
+            records=lightmaps.read(replacements['eaid://ego_package/lightmap_locations'])
+            new=next(bytes.fromhex(i['uniqueid']) for i in doc.inserted if i['source']=='objects$barrier_a')
+            self.assertEqual(records[1],(new,2,64/4096,0.25,0.5));self.assertEqual(len(records),2)  # spare has no record
+            self.assertEqual(doc.derived['visibility'][0]['added'],1);self.assertEqual(doc.derived['lighting'][0]['added'],1)
+            plain_doc=TrackDocument(root/'track')
+            self.assertNotIn(header,plain_doc.apply({},[{'id':'c3'*16,'source':barrier['id'],'world':moved(5)}],derived=False))
+            plain_doc.close();doc.close()

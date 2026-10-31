@@ -65,3 +65,14 @@ class RouteDataTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class ZoneWarningTests(unittest.TestCase):
+    def test_zone_warnings_use_stock_envelope(self):
+        from alterego_track_editor.native_routes import zone_warnings
+        with tempfile.TemporaryDirectory() as folder:
+            make_route_track(Path(folder)/'track');doc=TrackDocument(Path(folder)/'track');routes=doc.routes()
+            warnings=zone_warnings(routes.markup,routes.splines)
+            self.assertTrue(any('DRS activation 80 m' in w for w in warnings),warnings)  # 0.9 -> 0.1 on a 400 m loop
+            self.assertTrue(any('no DRS detection' in w for w in warnings),warnings)
+            doc.close()

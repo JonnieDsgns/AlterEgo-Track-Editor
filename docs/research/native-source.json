@@ -70,5 +70,15 @@
       }
     ],
     "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/formats/pvs.py",
+    "source": "AlterEgo Track Editor 0.3.3 implementation; layout first described by F1MapEditor (GPL-3.0-only) ego/pvs.py and ego/licht.py at 0c244b5; no code copied",
+    "license": "AGPL-3.0-or-later"
+  },
+  {
+    "path": "native/formats/lightmaps.py",
+    "source": "AlterEgo Track Editor 0.3.3 implementation; layout first described by F1MapEditor (GPL-3.0-only) ego/pvs.py and ego/licht.py at 0c244b5; no code copied",
+    "license": "AGPL-3.0-or-later"
   }
 ]

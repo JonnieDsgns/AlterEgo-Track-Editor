@@ -25,3 +25,5 @@ Only gameplay intervals are editable; audio, accessibility, crowd, reflection an
 ## Not covered
 
 Route geometry (TrackSpace knots, TS volumes, AI gates/waypoints), the QT02 route index, VPTimes/AI timing and pit data are previews only: changing them requires regenerating dependent data whose native generation is not established (see knowledge/ALTEREGO_RESEARCH_SURVEY.md). Adding/removing intervals, property values (DRS/X-Mode IDs, types), camera splines and practice programmes are not edited. Whether the game accepts moved sector/DRS/pit-limiter intervals without other changes (for example DRS pairing, timing gates, AI behaviour) is untested.
+
+0.3.3: export warns when DRS or Straight Mode zones leave the envelope measured on the 28 stock tracks (DRS activation 338–1039 m, detection 108–1938 m before it, Straight Mode 155–1748 m, no overlaps). The F1MapEditor rule ranges (300–1000 m, 50–600 m, 180–1750 m) would flag 18 stock zones on 13 tracks and are not used.
